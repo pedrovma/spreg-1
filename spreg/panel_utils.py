@@ -32,23 +32,42 @@ def prepare_panel(y, x, w, name_y, name_x, slx_lags, slx_vars, title, time_effec
     name_y = USER.set_name_y(name_y)
 
     w = USER.check_weights(w, bigy, w_required=True, time=True, slx_lags=slx_lags)
-    kx = bigx.shape[1]
 
-    if slx_lags >0:
-        title += " WITH SLX"
-        bigx,name_x = USER.flex_wx(w,x=bigx,name_x=name_x,constant=add_constant,
-                                        slx_lags=slx_lags,slx_vars=slx_vars, panel=True)            
-    kwx = bigx.shape[1] - kx
-
+    kt = 0
     if time_effects and T > 1:
         n = w.n
-        time_dummies = np.repeat(np.eye(T), n, axis=0)[:, 1:]        
-        bigx = np.hstack((bigx, time_dummies))            
+        time_dummies = np.repeat(np.eye(T), n, axis=0)[:, 1:]
         time_names = [f"time_{t}" for t in range(2, T + 1)]
-        name_x.extend(time_names)
-        kx += T - 1
+        bigx = np.hstack((bigx, time_dummies))
+        name_x = list(name_x) + time_names
+        kt = T - 1
 
-    return bigy, bigx, name_y, name_x, w, warn, slx_lags, title, kx, kwx, T
+    if slx_lags > 0 and kt > 0:
+        n_work = bigx.shape[1] - (1 if add_constant else 0)  # non-constant cols
+        n_orig = n_work - kt
+        if isinstance(slx_vars, str) and slx_vars.lower() == "all":
+            slx_vars = [True] * n_orig + [False] * kt
+        elif isinstance(slx_vars, list):
+            if len(slx_vars) != n_orig:
+                raise ValueError(
+                    f"slx_vars length ({len(slx_vars)}) must equal the number of "
+                    f"exogenous variables excluding constant and time effects ({n_orig})."
+                )
+            slx_vars = list(slx_vars) + [False] * kt
+        else:
+            raise ValueError("slx_vars must be 'all' or a list of booleans.")
+
+    kx = bigx.shape[1]
+
+    if slx_lags > 0:
+        title += " WITH SLX"
+        bigx, name_x = USER.flex_wx(
+            w, x=bigx, name_x=name_x, constant=add_constant,
+            slx_lags=slx_lags, slx_vars=slx_vars, panel=True,
+        )
+    kwx = bigx.shape[1] - kx
+
+    return bigy, bigx, name_y, name_x, w, warn, slx_lags, slx_vars, title, kx, kwx, T
 
 def check_panel(y, x, w, name_y, name_x):
     """
@@ -166,8 +185,6 @@ def demean_panel(arr, n, t, phi=0):
     arr_dm = spdot(Q, arr)
 
     return arr_dm
-
-import numpy as np
 
 def time_inv_check(dem_x, name_x):
     """

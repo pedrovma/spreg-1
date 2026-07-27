@@ -46,7 +46,7 @@ class PooledOLS(BaseOLS, RegressionPropsY, RegressionPropsVM):
     slx_vars     : either "All" (default) or list of booleans to select x variables
                    to be lagged
     time_effects : boolean
-                   If True, then include time dummies in the model specification (first ommitted).
+                   If True, then include time dummies in the model specification (first omitted).
                    Default: False.
     robust       : string, optional
                    If 'white', then a White consistent estimator of the
@@ -180,7 +180,7 @@ class PooledOLS(BaseOLS, RegressionPropsY, RegressionPropsVM):
     ):
 
         self.title = "POOLED OLS PANEL"
-        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.title, kx, kwx, self.t = prepare_panel(
+        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.slx_vars, self.title, kx, kwx, self.t = prepare_panel(
             y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, time_effects, add_constant=True)
         any(set_warn(self, i) for i in warn)
 
@@ -236,7 +236,7 @@ class PanelFE(RegressionPropsY, RegressionPropsVM):
     slx_vars     : either "All" (default) or list of booleans to select x variables
                     to be lagged
     time_effects : boolean
-                   If True, then include time dummies in the model specification (first ommitted).
+                   If True, then include time dummies in the model specification (first omitted).
                    Default: False                    
     vm           : boolean
                    if True, include variance-covariance matrix in summary
@@ -351,7 +351,7 @@ class PanelFE(RegressionPropsY, RegressionPropsVM):
     ):
         
         self.title = "FIXED EFFECTS PANEL "
-        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.title, kx, kwx, self.t = prepare_panel(
+        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.slx_vars, self.title, kx, kwx, self.t = prepare_panel(
             y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, time_effects, add_constant=False)
         any(set_warn(self, i) for i in warn)
   
@@ -428,7 +428,7 @@ class PanelRE(RegressionPropsY, RegressionPropsVM):
     slx_vars     : either "All" (default) or list of booleans to select x variables
                    to be lagged
     time_effects : boolean
-                   If True, then include time dummies in the model specification (first ommitted).
+                   If True, then include time dummies in the model specification (first omitted).
                    Default: False                   
     spat_diag    : boolean
                    If True (default), then compute the 'LMC_spatial' BSK test.
@@ -544,7 +544,7 @@ class PanelRE(RegressionPropsY, RegressionPropsVM):
     ):
         
         self.title = "RANDOM EFFECTS PANEL "
-        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.title, kx, kwx, self.t = prepare_panel(
+        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.slx_vars, self.title, kx, kwx, self.t = prepare_panel(
             y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, time_effects, add_constant=True)
         any(set_warn(self, i) for i in warn)
   
@@ -737,7 +737,7 @@ class GM_ErrorPooled(BaseGM_ErrorPooled):
     slx_vars     : either "All" (default) or list of booleans to select x variables
                    to be lagged
     time_effects : boolean
-                   If True, then include time dummies in the model specification (first ommitted).
+                   If True, then include time dummies in the model specification (first omitted).
                    Default: False                   
     nonspat_diag  : boolean
                    If True (default), then compute the 'LMC_RE' BSK test.
@@ -864,7 +864,7 @@ class GM_ErrorPooled(BaseGM_ErrorPooled):
     ):
 
         self.title = "GMM POOLED SPATIAL ERROR MODEL (SEM)"
-        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.title, kx, kwx, self.t = prepare_panel(
+        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.slx_vars, self.title, kx, kwx, self.t = prepare_panel(
             y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, time_effects, add_constant=True)
         any(set_warn(self, i) for i in warn)
         self.k = bigx.shape[1]
@@ -959,7 +959,7 @@ class ML_ErrorPooled(BaseML_ErrorPooled):
     slx_vars     : string
                    List of variables to apply spatial lag to. Default is "all".
     time_effects : boolean
-                   If True, then include time dummies in the model specification (first ommitted).
+                   If True, then include time dummies in the model specification (first omitted).
                    Default: False                   
     nonspat_diag : boolean
                    If True (default), then compute the 'LMC_RE' BSK test.
@@ -1078,7 +1078,7 @@ class ML_ErrorPooled(BaseML_ErrorPooled):
         latex=False,
     ):
         self.title = "ML POOLED SPATIAL ERROR MODEL (SEM)"
-        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.title, kx, kwx, self.t = prepare_panel(
+        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.slx_vars, self.title, kx, kwx, self.t = prepare_panel(
             y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, time_effects, add_constant=True)
         any(set_warn(self, i) for i in warn)
   
@@ -1364,7 +1364,7 @@ class GM_ErrorRE(BaseGM_ErrorRE, REGI.Regimes_Frame):
     slx_vars     : either "All" (default) or list of booleans to select x variables
                    to be lagged                
     time_effects : boolean
-                   If True, then include time dummies in the model specification (first ommitted).
+                   If True, then include time dummies in the model specification (first omitted).
                    Default: False                    
     full_weights: boolean
                   Considers different weights for each of the 6 moment
@@ -1489,7 +1489,7 @@ class GM_ErrorRE(BaseGM_ErrorRE, REGI.Regimes_Frame):
         latex=False,
     ):
         self.title = "GMM SPATIAL ERROR PANEL MODEL - RANDOM EFFECTS (KKP)"
-        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.title, kx, kwx, self.t = prepare_panel(
+        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.slx_vars, self.title, kx, kwx, self.t = prepare_panel(
             y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, time_effects, add_constant=True)
         any(set_warn(self, i) for i in warn)
    
@@ -1728,7 +1728,7 @@ class ML_ErrorFE(BaseML_ErrorFE):
     slx_vars     : either "All" (default) or list of booleans to select x variables
                    to be lagged                   
     time_effects : boolean
-                   If True, then include time dummies in the model specification (first ommitted).
+                   If True, then include time dummies in the model specification (first omitted).
                    Default: False                   
     epsilon      : float
                    tolerance criterion in mimimize_scalar function and
@@ -1881,7 +1881,7 @@ class ML_ErrorFE(BaseML_ErrorFE):
     ):
 
         self.title = "ML SPATIAL ERROR PANEL MODEL - FIXED EFFECTS"
-        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.title, kx, kwx, self.t = prepare_panel(
+        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.slx_vars, self.title, kx, kwx, self.t = prepare_panel(
             y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, time_effects, add_constant=False)
         any(set_warn(self, i) for i in warn)
   
@@ -1901,7 +1901,6 @@ class ML_ErrorFE(BaseML_ErrorFE):
         self.output = pd.DataFrame(self.name_x, columns=['var_names'])
         self.output['var_type'] = ['x'] * kx + ['wx'] * kwx + ["lambda"]
         self.output['regime'], self.output['equation'] = (0, 0)
-
         self.aic = DIAG.akaike(reg=self)
         self.schwarz = DIAG.schwarz(reg=self)
         self.other_top = _nonspat_top(self, ml=True)      
@@ -2195,7 +2194,7 @@ class ML_ErrorRE(BaseML_ErrorRE):
     slx_vars     : either "All" (default) or list of booleans to select x variables
                    to be lagged            
     time_effects : boolean
-                   If True, then include time dummies in the model specification (first ommitted).
+                   If True, then include time dummies in the model specification (first omitted).
                    Default: False                          
     epsilon      : float
                    tolerance criterion in mimimize_scalar function and
@@ -2345,7 +2344,7 @@ class ML_ErrorRE(BaseML_ErrorRE):
         latex=False,
     ):
         self.title = "ML SPATIAL ERROR PANEL MODEL (SEM) - RANDOM EFFECTS"
-        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.title, kx, kwx, self.t = prepare_panel(
+        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.slx_vars, self.title, kx, kwx, self.t = prepare_panel(
             y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, time_effects, add_constant=True)
         any(set_warn(self, i) for i in warn)
   
@@ -2565,7 +2564,7 @@ class ML_LagFE(BaseML_LagFE):
     slx_vars     : either "All" (default) or list of booleans to select x variables
                    to be lagged    
     time_effects : boolean
-                   If True, then include time dummies in the model specification (first ommitted).
+                   If True, then include time dummies in the model specification (first omitted).
                    Default: False                                  
     epsilon      : float
                    tolerance criterion in mimimize_scalar function and
@@ -2729,7 +2728,7 @@ class ML_LagFE(BaseML_LagFE):
     ):
         self.title = "ML SPATIAL LAG PANEL - FIXED EFFECTS"
 
-        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.title, kx, kwx, self.t = prepare_panel(
+        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.slx_vars, self.title, kx, kwx, self.t = prepare_panel(
             y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, time_effects, add_constant=False)
         any(set_warn(self, i) for i in warn)
   
@@ -2766,7 +2765,7 @@ class ML_LagFE(BaseML_LagFE):
         self.other_top += "%-20s:%12.4f\n" % (
             "Individual FE mean", self.mean_mu_i)        
         if spat_impacts:
-            self.sp_multipliers, impacts_str = _summary_impacts(self, w, spat_impacts, slx_lags,slx_vars)
+            self.sp_multipliers, impacts_str = _summary_impacts(self, w, spat_impacts, self.slx_lags, self.slx_vars)
             other_end += impacts_str
         output(reg=self, vm=vm, other_end=other_end, latex=latex)
 
@@ -3025,7 +3024,7 @@ class ML_LagRE(BaseML_LagRE):
     slx_vars     : either "All" (default) or list of booleans to select x variables
                    to be lagged    
     time_effects : boolean
-                   If True, then include time dummies in the model specification (first ommitted).
+                   If True, then include time dummies in the model specification (first omitted).
                    Default: False                   
     spat_impacts : string or list
                    Include average direct impact (ADI), average indirect impact (AII),
@@ -3180,7 +3179,7 @@ class ML_LagRE(BaseML_LagRE):
 
         self.title = "ML SPATIAL LAG PANEL - RANDOM EFFECTS"
 
-        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.title, kx, kwx, self.t = prepare_panel(
+        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.slx_vars, self.title, kx, kwx, self.t = prepare_panel(
             y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, time_effects, add_constant=True)
         any(set_warn(self, i) for i in warn)
   
@@ -3202,6 +3201,6 @@ class ML_LagRE(BaseML_LagRE):
         self.other_top, self.other_mid, other_end = ("", "", "")
         self.other_top += _nonspat_top(self, ml=True)
         if spat_impacts:
-            self.sp_multipliers, impacts_str = _summary_impacts(self, w, spat_impacts, slx_lags,slx_vars)
+            self.sp_multipliers, impacts_str = _summary_impacts(self, w, spat_impacts, self.slx_lags, self.slx_vars)
             other_end += impacts_str
         output(reg=self, vm=vm, other_end=other_end, latex=latex)
