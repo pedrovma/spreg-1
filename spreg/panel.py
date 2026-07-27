@@ -557,9 +557,6 @@ class PanelRE(RegressionPropsY, RegressionPropsVM):
         
         N = w.n
         T = bigy.shape[0] // N
-
-        n_time = (T - 1) if time_effects else 0
-        non_time = slice(0, self.k - n_time) if n_time > 0 else slice(None)
         
         y_mat = bigy.reshape((T, N))
         x_mat = bigx.reshape((T, N, self.k))
@@ -593,6 +590,13 @@ class PanelRE(RegressionPropsY, RegressionPropsVM):
         self.sigma2_epsilon = (e_fe.T @ e_fe)[0, 0] / df_fe
 
         # Between Estimation
+        if time_effects:
+            kt = T - 1
+            non_time = np.ones(self.k, dtype=bool)
+            non_time[(kx - kt):kx] = False
+        else:
+            non_time = slice(None)
+
         y_mean_col = y_mean.reshape(-1, 1)
         x_mean_nt = x_mean[:, non_time]
         xtx_b = x_mean_nt.T @ x_mean_nt
@@ -1162,7 +1166,6 @@ class BaseGM_ErrorRE(RegressionPropsY):
 
     def __init__(self, y, x, w, full_weights=False):
 
-        # 1a. OLS --> \tilde{\delta}
         ols = BaseOLS(y=y, x=x)
         self.x, self.y, self.n, self.k, self.xtx = ols.x, ols.y, ols.n, ols.k, ols.xtx
         N = w.n
@@ -1188,11 +1191,9 @@ class BaseGM_ErrorRE(RegressionPropsY):
             moments6, vcX=Xi.toarray(), all_par=True, start=[lambda1, sig_v, sig_1]
         )
 
-        # 2a. reg -->\hat{betas}
         theta = 1 - np.sqrt(sig_vb) / np.sqrt(sig_1b)
         gls_w = sps.identity(N * T) - theta * Q1
 
-        # With omega
         xs = gls_w.dot(get_spFilter(w, lambda2, x))
         ys = gls_w.dot(get_spFilter(w, lambda2, y))
         ols_s = BaseOLS(y=ys, x=xs)
@@ -1599,20 +1600,20 @@ class BaseML_ErrorFE(RegressionPropsY, RegressionPropsVM):
     """
 
     def __init__(self, y, x, w, epsilon=0.0000001):
-        # set up main regression variables and spatial filters
+
         N = w.n
         NT = y.shape[0]
         self.t = NT // N
         self.k = x.shape[1]
         self.epsilon = epsilon
-        # Demeaned variables
+
         self.y = demean_panel(y, N, self.t)
         self.x = demean_panel(x, N, self.t)
-        # Big W matrix
+
         W = w.full()[0]
         Wsp = w.sparse
         Wsp_nt = sps.kron(sps.identity(self.t), Wsp, format="csr")
-        # lag dependent variable
+
         ylag = spdot(Wsp_nt, self.y)
         xlag = spdot(Wsp_nt, self.x)
 
@@ -1628,13 +1629,11 @@ class BaseML_ErrorFE(RegressionPropsY, RegressionPropsVM):
         )
         self.lam = res.x
 
-        # compute full log-likelihood
         ln2pi = np.log(2.0 * np.pi)
         self.logll = (-res.fun - NT / 2.0 * ln2pi - NT / 2.0)
-        # adjusting sigma2 by NT:
+
         self.logll += (NT/2.0)*np.log(NT)
         
-        # b, residuals and predicted values
         ys = self.y - self.lam * ylag
         xs = self.x - self.lam * xlag
         xsxs = spdot(xs.T, xs)
@@ -1647,14 +1646,11 @@ class BaseML_ErrorFE(RegressionPropsY, RegressionPropsVM):
         self.u = self.y - spdot(self.x, b)
         self.predy = self.y - self.u
 
-        # residual variance
         self.e_filtered = self.u - self.lam * spdot(Wsp_nt, self.u)
         self.sig2 = spdot(self.e_filtered.T, self.e_filtered) / NT
 
-        # variance-covariance matrix betas
         varb = self.sig2 * xsxsi
 
-        # variance-covariance matrix lambda, sigma
         a = -self.lam * W
         spfill_diagonal(a, 1.0)
         ai = spinv(a)
@@ -1676,7 +1672,6 @@ class BaseML_ErrorFE(RegressionPropsY, RegressionPropsVM):
 
         self.vm1 = la.inv(v)
 
-        # create variance matrix for beta, lambda
         vv = np.hstack((varb, np.zeros((self.k, 1))))
         vv1 = np.hstack((np.zeros((1, self.k)), self.vm1[0, 0] * np.ones((1, 1))))
 
@@ -1913,8 +1908,6 @@ class ML_ErrorFE(BaseML_ErrorFE):
             "Individual FE mean", self.mean_mu_i)
         output(reg=self, vm=vm, robust=False, other_end=False, latex=latex)
 
-# PAREI A REVISAO DE 2-WAY AQUI! #
-
 class BaseML_ErrorRE(RegressionPropsY, RegressionPropsVM):
 
     """
@@ -1974,7 +1967,7 @@ class BaseML_ErrorRE(RegressionPropsY, RegressionPropsVM):
     """
 
     def __init__(self, y, x, w, epsilon=0.0000001):
-        # set up main regression variables and spatial filters
+
         N = w.n
         NT = y.shape[0]
         self.t = NT // N
@@ -1983,7 +1976,7 @@ class BaseML_ErrorRE(RegressionPropsY, RegressionPropsVM):
 
         self.y = y
         self.x = x
-        # Big W matrix
+
         W = w.full()[0]
         Wsp = w.sparse
         
@@ -2055,7 +2048,6 @@ class BaseML_ErrorRE(RegressionPropsY, RegressionPropsVM):
         ys = yrand - self.lam * ylag
         xs = xrand - self.lam * xlag
 
-        # Final OLS
         xsxs = spdot(xs.T, xs)
         xsxsi = la.inv(xsxs)
         xsys = spdot(xs.T, ys)
@@ -2064,7 +2056,6 @@ class BaseML_ErrorRE(RegressionPropsY, RegressionPropsVM):
         self.u = self.y - spdot(self.x, b)
         self.predy = self.y - self.u
 
-        # residual variance
         self.e_filtered = ys - spdot(xs, b)
         self.sig2 = spdot(self.e_filtered.T, self.e_filtered) / NT
 
@@ -2073,7 +2064,6 @@ class BaseML_ErrorRE(RegressionPropsY, RegressionPropsVM):
 
         self.betas = np.vstack((b, self.lam, self.sig2_u))
 
-        # variance-covariance matrix lambda, sigma
         a = -self.lam * W
         spfill_diagonal(a, 1.0)
         aTai = la.inv(spdot(a.T, a))
@@ -2124,7 +2114,6 @@ class BaseML_ErrorRE(RegressionPropsY, RegressionPropsVM):
 
         vm1 = np.linalg.inv(v)
 
-        # create variance matrix for beta, lambda
         vv = np.hstack((varb, np.zeros((self.k, 2))))
         vv1 = np.hstack((np.zeros((2, self.k)), vm1[:2, :2]))
 
@@ -2424,22 +2413,21 @@ class BaseML_LagFE(RegressionPropsY, RegressionPropsVM):
     """
 
     def __init__(self, y, x, w, epsilon=0.0000001):
-        # set up main regression variables and spatial filters
+
         N = w.n
         NT = y.shape[0]
         self.t = NT // N
         self.k = x.shape[1]
         self.epsilon = epsilon
-        # Demeaned variables
+
         self.y = demean_panel(y, N, self.t)
         self.x = demean_panel(x, N, self.t)
-        # Big W matrix
+
         W = w.full()[0]
         Wsp = w.sparse
         Wsp_nt = sps.kron(sps.identity(self.t), Wsp, format="csr")
-        # lag dependent variable
+
         ylag = spdot(Wsp_nt, self.y)
-        # b0, b1, e0 and e1
         xtx = spdot(self.x.T, self.x)
         xtxi = la.inv(xtx)
         xty = spdot(self.x.T, self.y)
@@ -2449,7 +2437,6 @@ class BaseML_LagFE(RegressionPropsY, RegressionPropsVM):
         e0 = self.y - spdot(self.x, b0)
         e1 = ylag - spdot(self.x, b1)
 
-        # concentrated Log Likelihood
         I = sps.identity(N)
         res = minimize_scalar(
             self.lag_c_loglik_sp,
@@ -2461,12 +2448,10 @@ class BaseML_LagFE(RegressionPropsY, RegressionPropsVM):
         )
         self.rho = res.x[0][0]
 
-        # compute full log-likelihood, including constants
         ln2pi = np.log(2.0 * np.pi)
         llik = -res.fun - NT / 2.0 * ln2pi - NT / 2.0
         self.logll = llik[0][0]
 
-        # b, residuals and predicted values
         b = b0 - self.rho * b1
         self.betas = np.vstack((b, self.rho))  # rho added as last coefficient
         self.u = e0 - self.rho * e1
@@ -2479,11 +2464,9 @@ class BaseML_LagFE(RegressionPropsY, RegressionPropsVM):
         )
         self.e_pred = self.y - self.predy_e
 
-        # residual variance
         self._cache = {}
         self.sig2 = spdot(self.u.T, self.u) / NT
 
-        # information matrix
         a = -self.rho * W
         spfill_diagonal(a, 1.0)
         ai = spinv(a)
@@ -2523,14 +2506,14 @@ class BaseML_LagFE(RegressionPropsY, RegressionPropsVM):
 
         v = np.hstack((v1, v2, v3))
 
-        self.vm1 = la.inv(v)  # vm1 includes variance for sigma2
-        self.vm = self.vm1[:-1, :-1]  # vm is for coefficients only
+        self.vm1 = la.inv(v)  
+        self.vm = self.vm1[:-1, :-1] 
         self.varb = la.inv(np.hstack((v1[:-1], v2[:-1])))
         self.k += 1  # add one to k to account for rho
         self.n = NT
 
     def lag_c_loglik_sp(self, rho, n, t, e0, e1, I, Wsp):
-        # concentrated log-lik for lag model, sparse algebra
+
         if isinstance(rho, np.ndarray):
             if rho.shape == (1, 1):
                 rho = rho[0][0]
@@ -2833,17 +2816,17 @@ class BaseML_LagRE(RegressionPropsY, RegressionPropsVM):
     """
 
     def __init__(self, bigy, bigx, w, epsilon=0.0000001):
-        # set up main regression variables and spatial filters
+
         N = w.n
         NT = bigy.shape[0]
         self.t = NT // N
         self.k = bigx.shape[1]
         self.epsilon = epsilon
-        # Big W matrix
+
         W = w.full()[0]
         Wsp = w.sparse
         Wsp_nt = sps.kron(sps.identity(self.t), Wsp, format="csr")
-        # Set up parameters
+
         converge = 1
         criteria = 0.0000001
         i = 0
@@ -2856,7 +2839,6 @@ class BaseML_LagRE(RegressionPropsY, RegressionPropsVM):
         xty = spdot(bigx.T, bigy)
         b = spdot(xtxi, xty)
 
-        # Iterative procedure
         while converge > criteria and i < itermax:
             phiold = self.phi
             res_phi = minimize_scalar(
@@ -2868,12 +2850,11 @@ class BaseML_LagRE(RegressionPropsY, RegressionPropsVM):
                 options={"xatol": epsilon},
             )
             self.phi = res_phi.x[0][0]
-            # Demeaned variables
+
             self.y = demean_panel(bigy, N, self.t, phi=self.phi)
             self.x = demean_panel(bigx, N, self.t, phi=self.phi)
-            # lag dependent variable
+
             ylag = spdot(Wsp_nt, self.y)
-            # b0, b1, e0 and e1
             xtx = spdot(self.x.T, self.x)
             xtxi = la.inv(xtx)
             xty = spdot(self.x.T, self.y)
@@ -2895,7 +2876,6 @@ class BaseML_LagRE(RegressionPropsY, RegressionPropsVM):
             i += 1
             converge = np.abs(phiold - self.phi)
 
-        # compute full log-likelihood, including constants
         ln2pi = np.log(2.0 * np.pi) 
         phi_jacob = (N / 2.0) * np.log(self.phi ** 2)
         llik = (-res_rho.fun + phi_jacob 
@@ -2903,7 +2883,6 @@ class BaseML_LagRE(RegressionPropsY, RegressionPropsVM):
             - NT / 2.0)
         self.logll = llik[0][0] 
 
-        # b, residuals and predicted values
         self.betas = np.vstack((b, self.rho, self.phi))
         self.u = e0 - self.rho * e1
         self.predy = self.y - self.u
@@ -2914,11 +2893,9 @@ class BaseML_LagRE(RegressionPropsY, RegressionPropsVM):
         )
         self.e_pred = self.y - self.predy_e
 
-        # residual variance
         self._cache = {}
         self.sig2 = spdot(self.u.T, self.u) / NT
 
-        # information matrix
         a = -self.rho * W
         spfill_diagonal(a, 1.0)
         ai = spinv(a)
@@ -2939,7 +2916,6 @@ class BaseML_LagRE(RegressionPropsY, RegressionPropsVM):
         wTwpredy = spdot(waiTwai_nt, xb)
         wpyTwpy = spdot(xb.T, wTwpredy)
 
-        # order of variables is beta, rho, sigma2
         v1 = np.vstack((xtx / self.sig2, xTwpy.T / self.sig2, np.zeros((2, self.k))))
         v2 = np.vstack(
             (
@@ -2968,15 +2944,15 @@ class BaseML_LagRE(RegressionPropsY, RegressionPropsVM):
 
         v = np.hstack((v1, v2, v3, v4))
 
-        self.vm1 = la.inv(v)  # vm1 includes variance for sigma2
-        self.vm = self.vm1[:-1, :-1]  # vm is for coefficients and phi
+        self.vm1 = la.inv(v)  
+        self.vm = self.vm1[:-1, :-1]  
         self.varb = la.inv(np.hstack((v1[:-2], v2[:-2])))
         self.k += 2 # add two to k to account for rho and phi
         self.n = NT
 
 
     def lag_c_loglik_sp(self, rho, n, t, e0, e1, I, Wsp):
-        # concentrated log-lik for lag model, sparse algebra
+
         if isinstance(rho, np.ndarray):
             if rho.shape == (1, 1):
                 rho = rho[0][0]
@@ -2991,10 +2967,10 @@ class BaseML_LagRE(RegressionPropsY, RegressionPropsVM):
 
 
     def phi_c_loglik(self, phi, rho, beta, bigy, bigx, n, t, W_nt):
-        # Demeaned variables
+
         y = demean_panel(bigy, n, t, phi=phi)
         x = demean_panel(bigx, n, t, phi=phi)
-        # Lag dependent variable
+
         ylag = spdot(W_nt, y)
         er = y - rho * ylag - spdot(x, beta)
         sig2 = spdot(er.T, er)
@@ -3190,8 +3166,8 @@ class ML_LagRE(BaseML_LagRE):
 
         self.name_ds = USER.set_name_ds(name_ds)
         name_ylag = USER.set_name_yend_sp(self.name_y)
-        self.name_x.append(name_ylag)  # rho changed to last position
-        self.name_x.append("phi")  # error variance parameter
+        self.name_x.append(name_ylag)
+        self.name_x.append("phi")
         self.name_w = USER.set_name_w(name_w, w)
         self.aic = DIAG.akaike(reg=self)
         self.schwarz = DIAG.schwarz(reg=self)

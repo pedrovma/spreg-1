@@ -435,15 +435,15 @@ class TestPanel(unittest.TestCase):
             slx_lags=1,
         )
         expected_betas = np.array(
-            [[7.651553, 4.021632, 1.021444, -0.892232, -0.248262, 0.942791, 0.546]]
+            [[7.648183, 4.02731, 1.023444, -0.892364, -0.24771, 0.942022, 0.5487]]
         )
         np.testing.assert_allclose(model.betas.T, expected_betas, atol=1e-4)
         expected_vm = np.array(
-            [0.074437, 0.053998, 0.064889, 0.062181, 0.063033, 0.089954, 0.129911]
+            [0.074142, 0.053762, 0.064443, 0.062394, 0.06324 , 0.089499, 0.129028]
         )
         np.testing.assert_allclose(model.vm.diagonal(), expected_vm, atol=1e-4)
         other = [model.sigma2_mu, model.sigma2_epsilon, model.theta, model.hausman_stat]
-        expected_other = [10.399289, 23.676399, 0.343139, 103.475028]
+        expected_other = [ 10.206199,  23.676399,   0.339644, 103.637194]
         np.testing.assert_allclose(other, expected_other, rtol=1e-4)
 
     def test_GM_ErrorPooled_twoway_slx(self):
