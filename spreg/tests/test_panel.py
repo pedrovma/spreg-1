@@ -48,7 +48,7 @@ class TestPanel(unittest.TestCase):
         expected_betas = np.array([[ 0.505371, -8.026947]]) 
         np.testing.assert_allclose(model.betas.T, expected_betas, atol=1e-4)
         
-        expected_vm = np.array([0.180367, 1.539671])
+        expected_vm = np.array([0.180595, 1.541625])
         np.testing.assert_allclose(model.vm.diagonal(), expected_vm, atol=1e-4)
 
         expected_mean_mu_i = 12.938448
@@ -177,7 +177,7 @@ class TestPanel(unittest.TestCase):
         np.testing.assert_allclose(model.vm.diagonal(), expected_vm, atol=1e-4)
 
         other = [model.aic, model.schwarz, model.logll, model.mean_mu_i]
-        expected_other = [ 1.322196e+04,  1.323927e+04, -6.607981e+03,  1.244338e+01]
+        expected_other = [ 1.322196e+04,  1.323927e+04, -6.607981e+03,  1.074278e+01]
         np.testing.assert_allclose(other, expected_other, rtol=1e-4)
 
         multipliers = [1.     , 0.23917, 1.23917]
@@ -211,5 +211,389 @@ class TestPanel(unittest.TestCase):
         expected_impact_out = "PS         1.1955          0.6667          1.8622"
         self.assertIn(expected_impact_out, impact_out)
 
+    def test_PooledOLS_twoway(self):
+        model = PANEL.PooledOLS(
+            self.y,
+            self.x,
+            w=self.w,
+            time_effects=True,
+            nonspat_diag=False,
+            spat_diag=True,
+            BSK_list='all',
+        )
+        expected_betas = np.array([[7.800349, 4.781756, 1.314681, -0.885384, -0.273779]])
+        np.testing.assert_allclose(model.betas.T, expected_betas, atol=1e-4)
+        expected_vm = np.array([0.053031, 0.018057, 0.022965, 0.088968, 0.089289])
+        np.testing.assert_allclose(model.vm.diagonal(), expected_vm, atol=1e-4)
+        expected_bsk = [13.665972, 19.766431, 577.470591, 11.391972, 7.786688]
+        np.testing.assert_allclose(
+            [i for i in model.bsk['Statistic']], expected_bsk, rtol=1e-4
+        )
+
+    def test_PanelFE_twoway(self):
+        model = PANEL.PanelFE(
+            self.y,
+            self.x,
+            w=self.w,
+            time_effects=True,
+        )
+        expected_betas = np.array([[0.459332, -7.763154, -0.720306, -0.61024]])
+        np.testing.assert_allclose(model.betas.T, expected_betas, atol=1e-4)
+        expected_vm = np.array([0.190276, 1.541609, 0.060306, 0.063254])
+        np.testing.assert_allclose(model.vm.diagonal(), expected_vm, atol=1e-4)
+        expected_mean_mu_i = 13.251921
+        np.testing.assert_allclose(model.mean_mu_i, expected_mean_mu_i, rtol=1e-4)
+
+    def test_PanelRE_twoway(self):
+        model = PANEL.PanelRE(
+            self.y,
+            self.x,
+            w=self.w,
+            time_effects=True,
+        )
+        expected_betas = np.array([[7.963289, 4.482333, 1.111048, -0.87882, -0.311604]])
+        np.testing.assert_allclose(model.betas.T, expected_betas, atol=1e-4)
+        expected_vm = np.array([0.058266, 0.02678, 0.036517, 0.062459, 0.062936])
+        np.testing.assert_allclose(model.vm.diagonal(), expected_vm, atol=1e-4)
+        other = [model.sigma2_mu, model.sigma2_epsilon, model.theta, model.hausman_stat]
+        expected_other = [10.357834, 23.661136, 0.342514, 104.883775]
+        np.testing.assert_allclose(other, expected_other, rtol=1e-4)
+
+    def test_GM_ErrorPooled_twoway(self):
+        model = PANEL.GM_ErrorPooled(
+            self.y,
+            self.x,
+            w=self.w,
+            time_effects=True,
+        )
+        expected_betas = np.array(
+            [[7.925487, 4.528931, 1.066654, -0.882939, -0.277609, 0.499603]]
+        )
+        np.testing.assert_allclose(model.betas.T, expected_betas, atol=1e-4)
+        expected_vm = np.array([0.271308, 0.048313, 0.052779, 0.325504, 0.337523, 0.000795])
+        np.testing.assert_allclose(model.vm.diagonal(), expected_vm, atol=1e-4)
+
+    def test_ML_ErrorPooled_twoway(self):
+        model = PANEL.ML_ErrorPooled(
+            self.y,
+            self.x,
+            w=self.w,
+            time_effects=True,
+        )
+        expected_betas = np.array(
+            [[7.927721, 4.52292, 1.060391, -0.88297, -0.277157, 0.450746]]
+        )
+        np.testing.assert_allclose(model.betas.T, expected_betas, atol=1e-4)
+        expected_vm = np.array([0.133564, 0.024178, 0.027279, 0.247709, 0.248142, 0.000615])
+        np.testing.assert_allclose(model.vm.diagonal(), expected_vm, atol=1e-4)
+        other = [model.aic, model.schwarz, model.logll]
+        expected_other = [14840.680075, 14869.526968, -7415.340037]
+        np.testing.assert_allclose(other, expected_other, rtol=1e-4)
+
+    def test_GM_ErrorRE_twoway(self):
+        model = PANEL.GM_ErrorRE(
+            self.y,
+            self.x,
+            w=self.w,
+            time_effects=True,
+        )
+        expected_betas = np.array(
+            [[8.009469, 4.338729, 0.982888, -0.879355, -0.302579, 0.434806, 23.83305, 41.442461]]
+        )
+        np.testing.assert_allclose(model.betas.T, expected_betas, atol=1e-4)
+        expected_vm = np.array([0.131209, 0.031242, 0.037627, 0.189276, 0.189836])
+        np.testing.assert_allclose(model.vm.diagonal(), expected_vm, atol=1e-4)
+
+    def test_ML_ErrorFE_twoway(self):
+        model = PANEL.ML_ErrorFE(
+            self.y,
+            self.x,
+            w=self.w,
+            time_effects=True,
+        )
+        expected_betas = np.array(
+            [[0.575023, -7.500393, -0.731785, -0.59552, 0.184641]]
+        )
+        np.testing.assert_allclose(model.betas.T, expected_betas, atol=1e-4)
+        expected_vm = np.array(
+            [1.368967e-01, 1.174591e+00, 5.896025e-02, 6.106609e-02, 8.940684e-04]
+        )
+        np.testing.assert_allclose(model.vm.diagonal(), expected_vm, atol=1e-4)
+        other = [model.aic, model.schwarz, model.logll, model.mean_mu_i]
+        expected_other = [13214.080401, 13237.157916, -6603.040201, 13.096164]
+        np.testing.assert_allclose(other, expected_other, rtol=1e-4)
+
+    def test_ML_ErrorRE_twoway(self):
+        model = PANEL.ML_ErrorRE(
+            self.y,
+            self.x,
+            w=self.w,
+            time_effects=True,
+        )
+        expected_betas = np.array(
+            [[7.975858, 4.402556, 1.064028, -0.881005, -0.29602, 0.434449, 6.074556]]
+        )
+        np.testing.assert_allclose(model.betas.T, expected_betas, atol=1e-3)
+        expected_vm = np.array(
+            [1.160089e-01, 2.918016e-02, 3.589305e-02, 1.902962e-01, 1.908026e-01, 2.556006e-05, 1.350158e-03]
+        )
+        np.testing.assert_allclose(model.vm.diagonal(), expected_vm, atol=1e-3)
+        other = [model.logll, model.phi]
+        expected_other = [-7443.594837, 0.253001]
+        np.testing.assert_allclose(other, expected_other, rtol=1e-3)
+
+    def test_ML_LagFE_twoway(self):
+        model = PANEL.ML_LagFE(
+            self.y,
+            self.x,
+            w=self.w,
+            time_effects=True,
+        )
+        expected_betas = np.array(
+            [[0.507792, -6.926939, -0.586646, -0.447572, 0.180828]]
+        )
+        np.testing.assert_allclose(model.betas.T, expected_betas, atol=1e-4)
+        expected_vm = np.array(
+            [1.239681e-01, 1.019751e+00, 3.981681e-02, 4.176785e-02, 8.715624e-04]
+        )
+        np.testing.assert_allclose(model.vm.diagonal(), expected_vm, atol=1e-4)
+        other = [model.aic, model.schwarz, model.logll, model.mean_mu_i]
+        expected_other = [13216.599418, 13245.446311, -6603.299709, 11.117378]
+        np.testing.assert_allclose(other, expected_other, rtol=1e-4)
+        multipliers = [1.0, 0.220745, 1.220745]
+        np.testing.assert_allclose(
+            model.sp_multipliers['simple'], multipliers, atol=1e-4
+        )
+
+    def test_ML_LagRE_twoway(self):
+        model = PANEL.ML_LagRE(
+            self.y,
+            self.x,
+            w=self.w,
+            time_effects=True,
+        )
+        expected_betas = np.array(
+            [[4.756492, 3.607342, 1.203576, -0.585533, -0.085171, 0.354285, 0.740364]]
+        )
+        np.testing.assert_allclose(model.betas.T, expected_betas, atol=1e-3)
+        expected_vm = np.array(
+            [0.09327, 0.02648, 0.028083, 0.060859, 0.060958, 0.000578, 0.000453]
+        )
+        np.testing.assert_allclose(model.vm.diagonal(), expected_vm, atol=1e-3)
+        other = [model.aic, model.schwarz, model.logll]
+        expected_other = [14773.984357, 14814.370007, -7379.992179]
+        np.testing.assert_allclose(other, expected_other, rtol=1e-3)
+        multipliers = [1.0, 0.54867, 1.54867]
+        np.testing.assert_allclose(
+            model.sp_multipliers['simple'], multipliers, atol=1e-3
+        )
+
+    def test_PooledOLS_twoway_slx(self):
+        model = PANEL.PooledOLS(
+            self.y,
+            self.x,
+            w=self.w,
+            time_effects=True,
+            slx_lags=1,
+            slx_vars=[True,True],
+            nonspat_diag=False,
+            spat_diag=False,
+        )
+        expected_betas = np.array(
+            [[7.459689, 4.376823, 1.127946, -0.899773, -0.216858, 0.868972, 0.705451]]
+        )
+        np.testing.assert_allclose(model.betas.T, expected_betas, atol=1e-4)
+        expected_vm = np.array(
+            [0.063186, 0.039154, 0.040512, 0.088524, 0.089082, 0.062592, 0.081522]
+        )
+        np.testing.assert_allclose(model.vm.diagonal(), expected_vm, atol=1e-4)
+
+    def test_PanelFE_twoway_slx(self):
+        model = PANEL.PanelFE(
+            self.y,
+            self.x,
+            w=self.w,
+            time_effects=True,
+            slx_lags=1,
+        )
+        expected_betas = np.array(
+            [[0.674627, -7.162413, -0.697255, -0.652331, -0.725542, -1.57907]]
+        )
+        np.testing.assert_allclose(model.betas.T, expected_betas, atol=1e-4)
+        expected_vm = np.array(
+            [0.241828, 2.492844, 0.060997, 0.068755, 0.589885, 4.761883]
+        )
+        np.testing.assert_allclose(model.vm.diagonal(), expected_vm, atol=1e-4)
+        expected_mean_mu_i = 13.835659
+        np.testing.assert_allclose(model.mean_mu_i, expected_mean_mu_i, rtol=1e-4)
+
+    def test_PanelRE_twoway_slx(self):
+        model = PANEL.PanelRE(
+            self.y,
+            self.x,
+            w=self.w,
+            time_effects=True,
+            slx_lags=1,
+        )
+        expected_betas = np.array(
+            [[7.648183, 4.02731, 1.023444, -0.892364, -0.24771, 0.942022, 0.5487]]
+        )
+        np.testing.assert_allclose(model.betas.T, expected_betas, atol=1e-4)
+        expected_vm = np.array(
+            [0.074142, 0.053762, 0.064443, 0.062394, 0.06324 , 0.089499, 0.129028]
+        )
+        np.testing.assert_allclose(model.vm.diagonal(), expected_vm, atol=1e-4)
+        other = [model.sigma2_mu, model.sigma2_epsilon, model.theta, model.hausman_stat]
+        expected_other = [ 10.206199,  23.676399,   0.339644, 103.637194]
+        np.testing.assert_allclose(other, expected_other, rtol=1e-4)
+
+    def test_GM_ErrorPooled_twoway_slx(self):
+        model = PANEL.GM_ErrorPooled(
+            self.y,
+            self.x,
+            w=self.w,
+            time_effects=True,
+            slx_lags=1,
+        )
+        expected_betas = np.array(
+            [[7.444685, 4.520406, 1.002456, -0.903187, -0.224908, 0.534491, 0.825905, 0.492934]]
+        )
+        np.testing.assert_allclose(model.betas.T, expected_betas, atol=1e-4)
+        expected_vm = np.array(
+            [0.290198, 0.065433, 0.048363, 0.316966, 0.325087, 0.075384, 0.106246, 0.00081]
+        )
+        np.testing.assert_allclose(model.vm.diagonal(), expected_vm, atol=1e-4)
+
+    def test_ML_ErrorPooled_twoway_slx(self):
+        model = PANEL.ML_ErrorPooled(
+            self.y,
+            self.x,
+            w=self.w,
+            time_effects=True,
+            slx_lags=1,
+        )
+        expected_betas = np.array(
+            [[7.44439, 4.521167, 1.000437, -0.903285, -0.225176, 0.526606, 0.827264, 0.44654]]
+        )
+        np.testing.assert_allclose(model.betas.T, expected_betas, atol=1e-4)
+        expected_vm = np.array(
+            [0.16113, 0.028954, 0.031241, 0.243432, 0.244714, 0.072921, 0.098265, 0.000619]
+        )
+        np.testing.assert_allclose(model.vm.diagonal(), expected_vm, atol=1e-4)
+        other = [model.aic, model.schwarz, model.logll]
+        expected_other = [14836.904221, 14877.289871, -7411.45211]
+        np.testing.assert_allclose(other, expected_other, rtol=1e-4)
+
+    def test_GM_ErrorRE_twoway_slx(self):
+        model = PANEL.GM_ErrorRE(
+            self.y,
+            self.x,
+            w=self.w,
+            time_effects=True,
+            slx_lags=1,
+        )
+        expected_betas = np.array(
+            [[7.546107, 4.293166, 0.946042, -0.899351, -0.240526, 0.613014, 0.753564, 0.430928, 23.683704, 41.485409]]
+        )
+        np.testing.assert_allclose(model.betas.T, expected_betas, atol=1e-4)
+        expected_vm = np.array(
+            [0.168958, 0.037395, 0.043779, 0.18615, 0.187817, 0.095167, 0.134424]
+        )
+        np.testing.assert_allclose(model.vm.diagonal(), expected_vm, atol=1e-4)
+
+    def test_ML_ErrorFE_twoway_slx(self):
+        model = PANEL.ML_ErrorFE(
+            self.y,
+            self.x,
+            w=self.w,
+            time_effects=True,
+            slx_lags=1,
+        )
+        expected_betas = np.array(
+            [[0.674047, -7.136074, -0.708363, -0.628613, -0.568084, -1.391175, 0.183251]]
+        )
+        np.testing.assert_allclose(model.betas.T, expected_betas, atol=1e-4)
+        expected_vm = np.array(
+            [1.501966e-01, 1.519799e+00, 5.942544e-02, 6.644126e-02, 4.388733e-01, 3.387919e+00, 8.953020e-04]
+        )
+        np.testing.assert_allclose(model.vm.diagonal(), expected_vm, atol=1e-4)
+        other = [model.aic, model.schwarz, model.logll, model.mean_mu_i]
+        expected_other = [13217.19551, 13251.811781, -6602.597755, 13.698298]
+        np.testing.assert_allclose(other, expected_other, rtol=1e-4)
+
+    def test_ML_ErrorRE_twoway_slx(self):
+        model = PANEL.ML_ErrorRE(
+            self.y,
+            self.x,
+            w=self.w,
+            time_effects=True,
+            slx_lags=1,
+        )
+        expected_betas = np.array(
+            [[7.507443, 4.232198, 0.994743, -0.902304, -0.219382, 0.811176, 0.772035, 0.432543, 6.051531]]
+        )
+        np.testing.assert_allclose(model.betas.T, expected_betas, atol=1e-3)
+        expected_vm = np.array(
+            [1.438760e-01, 3.950852e-02, 4.639000e-02, 1.884604e-01, 1.897577e-01, 8.751699e-02, 1.246807e-01, 2.587219e-05, 1.340475e-03]
+        )
+        np.testing.assert_allclose(model.vm.diagonal(), expected_vm, atol=1e-3)
+        other = [model.logll, model.phi]
+        expected_other = [-7439.046097, 0.252864]
+        np.testing.assert_allclose(other, expected_other, rtol=1e-3)
+
+    def test_ML_LagFE_twoway_slx(self):
+        model = PANEL.ML_LagFE(
+            self.y,
+            self.x,
+            w=self.w,
+            time_effects=True,
+            slx_lags=1,
+        )
+        expected_betas = np.array(
+            [[0.713026, -7.036564, -0.575711, -0.519863, -0.698457, -0.055027, 0.183518]]
+        )
+        np.testing.assert_allclose(model.betas.T, expected_betas, atol=1e-4)
+        expected_vm = np.array(
+            [1.572995e-01, 1.621448e+00, 4.012282e-02, 4.506673e-02, 3.837365e-01, 3.154243e+00, 8.948976e-04]
+        )
+        np.testing.assert_allclose(model.vm.diagonal(), expected_vm, atol=1e-4)
+        other = [model.aic, model.schwarz, model.logll, model.mean_mu_i]
+        expected_other = [13218.991327, 13259.376977, -6602.495663, 11.262956]
+        np.testing.assert_allclose(other, expected_other, rtol=1e-4)
+        multipliers = [1.0, 0.224767, 1.224767]
+        np.testing.assert_allclose(
+            model.sp_multipliers['simple'], multipliers, atol=1e-4
+        )
+        impact_out = model.summary[-270:-220]
+        expected_impact_out = "PS        -7.0366         -1.6490         -8.6855\n"
+        self.assertIn(expected_impact_out, impact_out)
+
+    def test_ML_LagRE_twoway_slx(self):
+        model = PANEL.ML_LagRE(
+            self.y,
+            self.x,
+            w=self.w,
+            time_effects=True,
+            slx_lags=1,
+        )
+        expected_betas = np.array(
+            [[4.467153, 4.170904, 0.934329, -0.540667, -0.126389, -1.098932, 0.156781, 0.400599, 0.760345]]
+        )
+        np.testing.assert_allclose(model.betas.T, expected_betas, atol=1e-3)
+        expected_vm = np.array(
+            [0.098409, 0.042185, 0.047579, 0.061178, 0.061308, 0.084525, 0.096859, 0.000672, 0.000469]
+        )
+        np.testing.assert_allclose(model.vm.diagonal(), expected_vm, atol=1e-3)
+        other = [model.aic, model.schwarz, model.logll]
+        expected_other = [14761.496453, 14813.420861, -7371.748227]
+        np.testing.assert_allclose(other, expected_other, rtol=1e-3)
+        multipliers = [1.0, 0.668331, 1.668331]
+        np.testing.assert_allclose(
+            model.sp_multipliers['simple'], multipliers, atol=1e-3
+        )
+        impact_out = model.summary[-270:-220]
+        expected_impact_out = "PS         0.9343          0.8860          1.8203\n"
+        self.assertIn(expected_impact_out, impact_out)
+        
 if __name__ == "__main__":
     unittest.main()

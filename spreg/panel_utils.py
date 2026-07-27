@@ -12,7 +12,7 @@ from scipy import sparse as sp
 from .sputils import spdot
 from . import user_output as USER
 
-def prepare_panel(y, x, w, name_y, name_x, slx_lags, slx_vars, title, add_constant=True):
+def prepare_panel(y, x, w, name_y, name_x, slx_lags, slx_vars, title, time_effects, add_constant=True):
     """
     Prepare the data for panel regression.
     Parameters as in the panel regression classes, with the addition of:
@@ -32,14 +32,42 @@ def prepare_panel(y, x, w, name_y, name_x, slx_lags, slx_vars, title, add_consta
     name_y = USER.set_name_y(name_y)
 
     w = USER.check_weights(w, bigy, w_required=True, time=True, slx_lags=slx_lags)
+
+    kt = 0
+    if time_effects and T > 1:
+        n = w.n
+        time_dummies = np.repeat(np.eye(T), n, axis=0)[:, 1:]
+        time_names = [f"time_{t}" for t in range(2, T + 1)]
+        bigx = np.hstack((bigx, time_dummies))
+        name_x = list(name_x) + time_names
+        kt = T - 1
+
+    if slx_lags > 0 and kt > 0:
+        n_work = bigx.shape[1] - (1 if add_constant else 0)  # non-constant cols
+        n_orig = n_work - kt
+        if isinstance(slx_vars, str) and slx_vars.lower() == "all":
+            slx_vars = [True] * n_orig + [False] * kt
+        elif isinstance(slx_vars, list):
+            if len(slx_vars) != n_orig:
+                raise ValueError(
+                    f"slx_vars length ({len(slx_vars)}) must equal the number of "
+                    f"exogenous variables excluding constant and time effects ({n_orig})."
+                )
+            slx_vars = list(slx_vars) + [False] * kt
+        else:
+            raise ValueError("slx_vars must be 'all' or a list of booleans.")
+
     kx = bigx.shape[1]
 
-    if slx_lags >0:
+    if slx_lags > 0:
         title += " WITH SLX"
-        bigx,name_x = USER.flex_wx(w,x=bigx,name_x=name_x,constant=add_constant,
-                                        slx_lags=slx_lags,slx_vars=slx_vars, panel=True)            
+        bigx, name_x = USER.flex_wx(
+            w, x=bigx, name_x=name_x, constant=add_constant,
+            slx_lags=slx_lags, slx_vars=slx_vars, panel=True,
+        )
     kwx = bigx.shape[1] - kx
-    return bigy, bigx, name_y, name_x, w, warn, slx_lags, title, kx, kwx, T
+
+    return bigy, bigx, name_y, name_x, w, warn, slx_lags, slx_vars, title, kx, kwx, T
 
 def check_panel(y, x, w, name_y, name_x):
     """
@@ -157,3 +185,30 @@ def demean_panel(arr, n, t, phi=0):
     arr_dm = spdot(Q, arr)
 
     return arr_dm
+
+def time_inv_check(dem_x, name_x):
+    """
+    Check for time-invariant variables in a demeaned matrix.
+    
+    Parameters
+    ----------
+    dem_x  : array
+             Demeaned independent variables array (n*t x k)
+    name_x : list of strings
+             Names of independent variables
+             
+    Raises
+    ------
+    ValueError
+        If time-invariant variables are detected (variance is zero).
+    """
+    var_check = np.var(dem_x, axis=0)
+    invalid_cols = np.where(var_check <= 1e-12)[0]
+    
+    if invalid_cols.size > 0:
+        invalid_names = [name_x[i] for i in invalid_cols]
+        raise ValueError(
+            f"Time-invariant variables detected: {', '.join(invalid_names)}. "
+            "These cannot be estimated using the Within transformation. "
+            "Please remove them from the input variables (x)."
+        )

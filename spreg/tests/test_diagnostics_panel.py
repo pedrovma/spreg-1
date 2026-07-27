@@ -1,44 +1,27 @@
 import unittest
 import libpysal
 import numpy as np
-import pandas as pd
+import geopandas as gpd
 from spreg.diagnostics_panel import panel_LMlag, panel_LMerror, panel_rLMlag
 from spreg.diagnostics_panel import panel_rLMerror, panel_Hausman
-from spreg.panel_fe import Panel_FE_Lag, Panel_FE_Error
-from spreg.panel_re import Panel_RE_Lag, Panel_RE_Error
+from spreg.panel_fe import Panel_FE_Lag
+from spreg.panel_re import Panel_RE_Lag
 from libpysal.common import RTOL
-from libpysal.weights import w_subset
-
 
 class Test_Panel_Diagnostics(unittest.TestCase):
     def setUp(self):
         self.ds_name = "NCOVR"
-        nat = libpysal.examples.load_example(self.ds_name)
-        self.db = libpysal.io.open(nat.get_path("NAT.dbf"), "r")
-        nat_shp = libpysal.examples.get_path("NAT.shp")
-        w_full = libpysal.weights.Queen.from_shapefile(nat_shp)
-        self.y_name = ["HR70", "HR80", "HR90"]
-        self.x_names = ["RD70", "RD80", "RD90", "PS70", "PS80", "PS90"]
-        c_names = ["STATE_NAME", "FIPSNO"]
-        y_full = [self.db.by_col(name) for name in self.y_name]
-        y_full = np.array(y_full).T
-        x_full = [self.db.by_col(name) for name in self.x_names]
-        x_full = np.array(x_full).T
-        c_full = [self.db.by_col(name) for name in c_names]
-        c_full = pd.DataFrame(c_full, index=c_names).T
+        libpysal.examples.load_example(self.ds_name)
+
+        db = gpd.read_file(libpysal.examples.get_path("NAT.shp"))
         filter_states = ["Kansas", "Missouri", "Oklahoma", "Arkansas"]
-        filter_counties = c_full[c_full["STATE_NAME"].isin(filter_states)]
-        filter_counties = filter_counties["FIPSNO"].values
-        counties = np.array(self.db.by_col("FIPSNO"))
-        subid = np.where(np.isin(counties, filter_counties))[0]
-        self.w = w_subset(w_full, subid)
+        db = db[db["STATE_NAME"].isin(filter_states)].copy()
+
+        self.y = db[["HR70", "HR80", "HR90"]]
+        self.x = db[["RD70", "RD80", "RD90", "PS70", "PS80", "PS90"]]
+
+        self.w = libpysal.weights.Queen.from_dataframe(db, use_index=True)
         self.w.transform = "r"
-        self.y = y_full[
-            subid,
-        ]
-        self.x = x_full[
-            subid,
-        ]
 
     def test_LM(self):
         lmlag = panel_LMlag(self.y, self.x, self.w)

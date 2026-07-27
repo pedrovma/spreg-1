@@ -11,7 +11,7 @@ from .diagnostics_panel import BSK_tests
 from .utils import RegressionPropsY, RegressionPropsVM, set_warn, optim_moments, get_spFilter, spdot, inverse_prod
 from .sputils import spdot, spfill_diagonal, spinv
 from .ols import BaseOLS
-from .panel_utils import prepare_panel, demean_panel
+from .panel_utils import prepare_panel, demean_panel, time_inv_check
 from .output import output, _nonspat_mid, _nonspat_top, _summary_iteration, _summary_impacts
 from . import regimes as REGI
 from . import user_output as USER
@@ -45,6 +45,9 @@ class PooledOLS(BaseOLS, RegressionPropsY, RegressionPropsVM):
                    If slx_lags>0, the specification becomes of the SLX type.
     slx_vars     : either "All" (default) or list of booleans to select x variables
                    to be lagged
+    time_effects : boolean
+                   If True, then include time dummies in the model specification (first omitted).
+                   Default: False.
     robust       : string, optional
                    If 'white', then a White consistent estimator of the
                    variance-covariance matrix is given. 
@@ -163,6 +166,7 @@ class PooledOLS(BaseOLS, RegressionPropsY, RegressionPropsVM):
         w,
         slx_lags = 0,
         slx_vars = "all",
+        time_effects=False,
         robust=None,
         vm=False,
         nonspat_diag=False,
@@ -176,10 +180,13 @@ class PooledOLS(BaseOLS, RegressionPropsY, RegressionPropsVM):
     ):
 
         self.title = "POOLED OLS PANEL"
-        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.title, kx, kwx, self.t = prepare_panel(
-            y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, add_constant=True)
+        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.slx_vars, self.title, kx, kwx, self.t = prepare_panel(
+            y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, time_effects, add_constant=True)
         any(set_warn(self, i) for i in warn)
-        
+
+        if time_effects:
+            self.title += " WITH TIME DUMMIES"
+
         self.k = bigx.shape[1]
         
         BaseOLS.__init__(self, bigy, bigx, robust=robust, sig2n_k=True)
@@ -207,7 +214,7 @@ class PooledOLS(BaseOLS, RegressionPropsY, RegressionPropsVM):
 
 class PanelFE(RegressionPropsY, RegressionPropsVM):
     """
-    Fixed Effects (One-Way) OLS for Panel Data.
+    Fixed Effects (One-Way or Two-Way) OLS for Panel Data.
     
     This model controls for time-invariant unobserved heterogeneity by 
     demeaning the data (Within Transformation) before estimation. 
@@ -228,6 +235,9 @@ class PanelFE(RegressionPropsY, RegressionPropsVM):
                     Number of spatial lags of X to include in the model specification.
     slx_vars     : either "All" (default) or list of booleans to select x variables
                     to be lagged
+    time_effects : boolean
+                   If True, then include time dummies in the model specification (first omitted).
+                   Default: False                    
     vm           : boolean
                    if True, include variance-covariance matrix in summary
                    results
@@ -255,8 +265,10 @@ class PanelFE(RegressionPropsY, RegressionPropsVM):
                    (nxt)x1 array of residuals
     predy        : array
                    (nxt)x1 array of predicted y values
+    mu_i         : array
+                   nx1 array of the individual fixed effects
     fixed_effects: array
-                   nx1 array of the estimated fixed effects (mu_i)
+                   alias for mu_i (same object)
     n            : integer
                    Total number of observations (N * T)
     t            : integer
@@ -329,6 +341,7 @@ class PanelFE(RegressionPropsY, RegressionPropsVM):
         w,
         slx_lags=0,
         slx_vars="all",
+        time_effects=False,
         vm=False,
         name_y=None,
         name_x=None,
@@ -337,11 +350,16 @@ class PanelFE(RegressionPropsY, RegressionPropsVM):
         latex=False,
     ):
         
-        self.title = "FIXED EFFECTS PANEL (ONE-WAY)"
-        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.title, kx, kwx, self.t = prepare_panel(
-            y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, add_constant=False)
+        self.title = "FIXED EFFECTS PANEL "
+        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.slx_vars, self.title, kx, kwx, self.t = prepare_panel(
+            y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, time_effects, add_constant=False)
         any(set_warn(self, i) for i in warn)
   
+        if time_effects:
+            self.title += "(TWO-WAY)"
+        else:
+            self.title += "(ONE-WAY)"
+
         self.k = bigx.shape[1]
 
         # Demean
@@ -349,33 +367,26 @@ class PanelFE(RegressionPropsY, RegressionPropsVM):
         NT = bigy.shape[0]
         T = NT // N
         
-        y_mat = bigy.reshape((T, N))
-        x_mat = bigx.reshape((T, N, self.k))
-        
-        y_mean = y_mat.mean(axis=0)
-        x_mean = x_mat.mean(axis=0)
-        
-        dem_y = bigy - np.tile(y_mean, T).reshape(-1, 1)
-        
-        dem_x = np.zeros_like(bigx)
-        for i in range(self.k):
-            col_mean = x_mean[:, i] 
-            col_vals = bigx[:, i] 
-            dem_x[:, i] = col_vals - np.tile(col_mean, T)
+        dem_y = demean_panel(bigy, N, T, phi=0)
+        dem_x = demean_panel(bigx, N, T, phi=0)
+
+        time_inv_check(dem_x, self.name_x)
 
         reg_ols = BaseOLS(dem_y, dem_x, sig2n_k=False)
         self.y, self.x = bigy, bigx
         self.betas = reg_ols.betas
-        self.predy = np.dot(bigx, self.betas)
-        self.u = bigy - self.predy
-        self.xtxi = la.inv(np.dot(bigx.T, bigx))
-        self.df_resid = NT - N
 
-        ssr = reg_ols.u.T @ reg_ols.u
+        raw_u = bigy - np.dot(bigx, self.betas)
+        self.fixed_effects = raw_u.reshape(T, N).mean(axis=0).reshape(-1, 1)
+        self.u = reg_ols.u
+        self.predy = bigy - self.u
+
+        self.xtxi = reg_ols.xtxi
+        self.df_resid = NT - N - self.k
+        ssr = self.u.T @ self.u
         self.sig2 = ssr[0, 0] / self.df_resid
         self.vm = np.dot(self.sig2, reg_ols.xtxi)
         self.std_err = np.sqrt(np.diag(self.vm))
-        self.fixed_effects = y_mean.reshape(-1, 1) - (x_mean @ self.betas)
 
         self.name_ds = USER.set_name_ds(name_ds)
         self.name_w = USER.set_name_w(name_w, w)
@@ -387,16 +398,16 @@ class PanelFE(RegressionPropsY, RegressionPropsVM):
         self.other_top, self.other_mid, other_end = ("", "", "") 
         self.other_top += _nonspat_top(self)
 
-        self.mu_i = self.u.reshape(self.t, N).mean(axis=0).reshape(-1, 1)        
-        self.mean_mu_i = self.mu_i.mean()
+        self.mean_mu_i = self.fixed_effects.mean()
+        self.mu_i = self.fixed_effects
         self.other_top += "%-20s:%12.4f\n" % (
-            "Fixed-effects mean", self.mean_mu_i)        
+            "Individual FE mean", self.mean_mu_i)        
 
         output(reg=self, vm=vm, other_end=other_end, latex=latex)
 
 class PanelRE(RegressionPropsY, RegressionPropsVM):
     """
-    Random Effects (One-Way) GLS for Panel Data.
+    Random Effects (One-Way or Two-Way) GLS for Panel Data.
     
     Includes the Swamy-Arora estimator for variance components and 
     the classic Hausman Specification Test (not robust to spatial autocorrelation).
@@ -416,6 +427,9 @@ class PanelRE(RegressionPropsY, RegressionPropsVM):
                    If slx_lags>0, the specification becomes of the SLX type.
     slx_vars     : either "All" (default) or list of booleans to select x variables
                    to be lagged
+    time_effects : boolean
+                   If True, then include time dummies in the model specification (first omitted).
+                   Default: False                   
     spat_diag    : boolean
                    If True (default), then compute the 'LMC_spatial' BSK test.
     vm           : boolean
@@ -519,6 +533,7 @@ class PanelRE(RegressionPropsY, RegressionPropsVM):
         w,
         slx_lags=0,
         slx_vars="all",
+        time_effects=False,
         spat_diag=True,
         vm=False,
         name_y=None,
@@ -528,10 +543,15 @@ class PanelRE(RegressionPropsY, RegressionPropsVM):
         latex=False,
     ):
         
-        self.title = "RANDOM EFFECTS (ONE-WAY) PANEL"
-        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.title, kx, kwx, self.t = prepare_panel(
-            y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, add_constant=True)
+        self.title = "RANDOM EFFECTS PANEL "
+        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.slx_vars, self.title, kx, kwx, self.t = prepare_panel(
+            y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, time_effects, add_constant=True)
         any(set_warn(self, i) for i in warn)
+  
+        if time_effects:
+            self.title += "(TWO-WAY)"
+        else:
+            self.title += "(ONE-WAY)"        
 
         self.k = bigx.shape[1]
         
@@ -544,9 +564,7 @@ class PanelRE(RegressionPropsY, RegressionPropsVM):
         x_mean = x_mat.mean(axis=0)
 
         y_mean_long = np.tile(y_mean, T).reshape(-1, 1)
-        x_mean_long = np.zeros_like(bigx)
-        for i in range(self.k):
-            x_mean_long[:, i] = np.tile(x_mean[:, i], T)
+        x_mean_long = np.tile(x_mean, (T, 1))
 
         # Within Estimation
         y_dem = bigy - y_mean_long
@@ -572,18 +590,26 @@ class PanelRE(RegressionPropsY, RegressionPropsVM):
         self.sigma2_epsilon = (e_fe.T @ e_fe)[0, 0] / df_fe
 
         # Between Estimation
+        if time_effects:
+            kt = T - 1
+            non_time = np.ones(self.k, dtype=bool)
+            non_time[(kx - kt):kx] = False
+        else:
+            non_time = slice(None)
+
         y_mean_col = y_mean.reshape(-1, 1)
-        xtx_b = x_mean.T @ x_mean
-        xty_b = x_mean.T @ y_mean_col
+        x_mean_nt = x_mean[:, non_time]
+        xtx_b = x_mean_nt.T @ x_mean_nt
+        xty_b = x_mean_nt.T @ y_mean_col
         
         try:
             beta_b = np.linalg.solve(xtx_b, xty_b)
         except np.linalg.LinAlgError:
             beta_b = np.linalg.pinv(xtx_b) @ xty_b
             
-        e_b = y_mean_col - (x_mean @ beta_b)
+        e_b = y_mean_col - (x_mean_nt @ beta_b)
         ssr_b = (e_b.T @ e_b)[0, 0]
-        sigma2_b = ssr_b / (N - self.k)
+        sigma2_b = ssr_b / (N - x_mean_nt.shape[1])
         
         self.sigma2_mu = sigma2_b - (self.sigma2_epsilon / T)
         
@@ -714,6 +740,9 @@ class GM_ErrorPooled(BaseGM_ErrorPooled):
                    If slx_lags>0, the specification becomes of the SLX type.
     slx_vars     : either "All" (default) or list of booleans to select x variables
                    to be lagged
+    time_effects : boolean
+                   If True, then include time dummies in the model specification (first omitted).
+                   Default: False                   
     nonspat_diag  : boolean
                    If True (default), then compute the 'LMC_RE' BSK test.
     maxit         : integer
@@ -826,6 +855,7 @@ class GM_ErrorPooled(BaseGM_ErrorPooled):
         w,
         slx_lags=0,
         slx_vars="all",
+        time_effects=False,
         nonspat_diag=True,
         max_iter=1,
         step1c=False,
@@ -838,11 +868,14 @@ class GM_ErrorPooled(BaseGM_ErrorPooled):
     ):
 
         self.title = "GMM POOLED SPATIAL ERROR MODEL (SEM)"
-        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.title, kx, kwx, self.t = prepare_panel(
-            y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, add_constant=True)
+        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.slx_vars, self.title, kx, kwx, self.t = prepare_panel(
+            y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, time_effects, add_constant=True)
         any(set_warn(self, i) for i in warn)
         self.k = bigx.shape[1]
-        
+  
+        if time_effects:
+            self.title += " WITH TIME EFFECTS"
+      
         BaseGM_ErrorPooled.__init__(self, bigy, bigx, w, max_iter=max_iter, step1c=step1c)
         
         self.name_ds = USER.set_name_ds(name_ds)
@@ -854,9 +887,10 @@ class GM_ErrorPooled(BaseGM_ErrorPooled):
         self.output['regime'], self.output['equation'] = (0, 0)
         self.other_top = _summary_iteration(self)
 
+        other_end = ""
         if nonspat_diag:
             self.bsk = BSK_tests(self, w, which=['LMC_RE'])
-            other_end = "\nDIAGNOSTIC TESTS\n"
+            other_end += "\nDIAGNOSTIC TESTS\n"
             other_end += f"{'-' * 84 }\n"
             other_end += "TEST                             DF        VALUE           PROB\n"
             for i in range(len(self.bsk)):
@@ -928,6 +962,9 @@ class ML_ErrorPooled(BaseML_ErrorPooled):
                    Default is 0.
     slx_vars     : string
                    List of variables to apply spatial lag to. Default is "all".
+    time_effects : boolean
+                   If True, then include time dummies in the model specification (first omitted).
+                   Default: False                   
     nonspat_diag : boolean
                    If True (default), then compute the 'LMC_RE' BSK test.
     vm           : boolean
@@ -1035,6 +1072,7 @@ class ML_ErrorPooled(BaseML_ErrorPooled):
         epsilon=0.0000001,
         slx_lags=0,
         slx_vars="all",
+        time_effects=False,
         nonspat_diag=True,
         vm=False,
         name_y=None,
@@ -1044,19 +1082,19 @@ class ML_ErrorPooled(BaseML_ErrorPooled):
         latex=False,
     ):
         self.title = "ML POOLED SPATIAL ERROR MODEL (SEM)"
-        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.title, kx, kwx, self.t = prepare_panel(
-            y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, add_constant=True)
+        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.slx_vars, self.title, kx, kwx, self.t = prepare_panel(
+            y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, time_effects, add_constant=True)
         any(set_warn(self, i) for i in warn)
+  
+        if time_effects:
+            self.title += " WITH TIME EFFECTS"
 
         self.k = bigx.shape[1]
         
         BaseML_ErrorPooled.__init__(self, bigy, bigx, w, method=method, epsilon=epsilon)
         
         self.name_ds = USER.set_name_ds(name_ds)
-        self.name_y = USER.set_name_y(name_y)
-        self.slx_lags = slx_lags
         self.name_w = USER.set_name_w(name_w, w)
-        
         self.name_x.append("lambda")
 
         self.output = pd.DataFrame(self.name_x, columns=['var_names'])
@@ -1067,9 +1105,10 @@ class ML_ErrorPooled(BaseML_ErrorPooled):
         self.schwarz = DIAG.schwarz(reg=self)
         self.other_top = _nonspat_top(self, ml=True)     
 
+        other_end = ""
         if nonspat_diag:
             self.bsk = BSK_tests(self, w, which=['LMC_RE'])
-            other_end = "\nDIAGNOSTIC TESTS\n"
+            other_end += "\nDIAGNOSTIC TESTS\n"
             other_end += f"{'-' * 84 }\n"
             other_end += "TEST                             DF        VALUE           PROB\n"
             for i in range(len(self.bsk)):
@@ -1127,7 +1166,6 @@ class BaseGM_ErrorRE(RegressionPropsY):
 
     def __init__(self, y, x, w, full_weights=False):
 
-        # 1a. OLS --> \tilde{\delta}
         ols = BaseOLS(y=y, x=x)
         self.x, self.y, self.n, self.k, self.xtx = ols.x, ols.y, ols.n, ols.k, ols.xtx
         N = w.n
@@ -1153,11 +1191,9 @@ class BaseGM_ErrorRE(RegressionPropsY):
             moments6, vcX=Xi.toarray(), all_par=True, start=[lambda1, sig_v, sig_1]
         )
 
-        # 2a. reg -->\hat{betas}
         theta = 1 - np.sqrt(sig_vb) / np.sqrt(sig_1b)
         gls_w = sps.identity(N * T) - theta * Q1
 
-        # With omega
         xs = gls_w.dot(get_spFilter(w, lambda2, x))
         ys = gls_w.dot(get_spFilter(w, lambda2, y))
         ols_s = BaseOLS(y=ys, x=xs)
@@ -1327,7 +1363,10 @@ class GM_ErrorRE(BaseGM_ErrorRE, REGI.Regimes_Frame):
                    Number of spatial lags of X to include in the model specification.
                    If slx_lags>0, the specification becomes of the SLX type.
     slx_vars     : either "All" (default) or list of booleans to select x variables
-                   to be lagged                 
+                   to be lagged                
+    time_effects : boolean
+                   If True, then include time dummies in the model specification (first omitted).
+                   Default: False                    
     full_weights: boolean
                   Considers different weights for each of the 6 moment
                   conditions if True or only 2 sets of weights for the
@@ -1439,6 +1478,7 @@ class GM_ErrorRE(BaseGM_ErrorRE, REGI.Regimes_Frame):
         w,
         slx_lags=0,
         slx_vars="all",
+        time_effects=False,
         full_weights=False,
         regimes=None,
         vm=False,
@@ -1450,10 +1490,13 @@ class GM_ErrorRE(BaseGM_ErrorRE, REGI.Regimes_Frame):
         latex=False,
     ):
         self.title = "GMM SPATIAL ERROR PANEL MODEL - RANDOM EFFECTS (KKP)"
-        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.title, kx, kwx, self.t = prepare_panel(
-            y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, add_constant=True)
+        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.slx_vars, self.title, kx, kwx, self.t = prepare_panel(
+            y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, time_effects, add_constant=True)
         any(set_warn(self, i) for i in warn)
- 
+   
+        if time_effects:
+            self.title += " WITH TIME EFFECTS"
+
         if regimes is not None:
             raise NotImplementedError("Regimes are not currently implemented for GM_ErrorRE.")
             """
@@ -1483,7 +1526,7 @@ class GM_ErrorRE(BaseGM_ErrorRE, REGI.Regimes_Frame):
             regimes = True
         """
         self.output = pd.DataFrame(self.name_x, columns=['var_names'])
-        self.output['var_type'] = ['o'] + ['x'] * (kx-1) + ['wx'] * kwx + ["lambda", " sigma2_v", "sigma2_1"]
+        self.output['var_type'] = ['o'] + ['x'] * (kx-1) + ['wx'] * kwx + ["lambda", "sigma2_v", "sigma2_1"]
         self.output['regime'], self.output['equation'] = (0, 0)
         output(reg=self, vm=vm, robust=False, other_end=False, latex=latex)
 
@@ -1557,20 +1600,20 @@ class BaseML_ErrorFE(RegressionPropsY, RegressionPropsVM):
     """
 
     def __init__(self, y, x, w, epsilon=0.0000001):
-        # set up main regression variables and spatial filters
+
         N = w.n
         NT = y.shape[0]
         self.t = NT // N
         self.k = x.shape[1]
         self.epsilon = epsilon
-        # Demeaned variables
+
         self.y = demean_panel(y, N, self.t)
         self.x = demean_panel(x, N, self.t)
-        # Big W matrix
+
         W = w.full()[0]
         Wsp = w.sparse
         Wsp_nt = sps.kron(sps.identity(self.t), Wsp, format="csr")
-        # lag dependent variable
+
         ylag = spdot(Wsp_nt, self.y)
         xlag = spdot(Wsp_nt, self.x)
 
@@ -1586,13 +1629,11 @@ class BaseML_ErrorFE(RegressionPropsY, RegressionPropsVM):
         )
         self.lam = res.x
 
-        # compute full log-likelihood
         ln2pi = np.log(2.0 * np.pi)
         self.logll = (-res.fun - NT / 2.0 * ln2pi - NT / 2.0)
-        # adjusting sigma2 by NT:
+
         self.logll += (NT/2.0)*np.log(NT)
         
-        # b, residuals and predicted values
         ys = self.y - self.lam * ylag
         xs = self.x - self.lam * xlag
         xsxs = spdot(xs.T, xs)
@@ -1605,14 +1646,11 @@ class BaseML_ErrorFE(RegressionPropsY, RegressionPropsVM):
         self.u = self.y - spdot(self.x, b)
         self.predy = self.y - self.u
 
-        # residual variance
         self.e_filtered = self.u - self.lam * spdot(Wsp_nt, self.u)
         self.sig2 = spdot(self.e_filtered.T, self.e_filtered) / NT
 
-        # variance-covariance matrix betas
         varb = self.sig2 * xsxsi
 
-        # variance-covariance matrix lambda, sigma
         a = -self.lam * W
         spfill_diagonal(a, 1.0)
         ai = spinv(a)
@@ -1634,7 +1672,6 @@ class BaseML_ErrorFE(RegressionPropsY, RegressionPropsVM):
 
         self.vm1 = la.inv(v)
 
-        # create variance matrix for beta, lambda
         vv = np.hstack((varb, np.zeros((self.k, 1))))
         vv1 = np.hstack((np.zeros((1, self.k)), self.vm1[0, 0] * np.ones((1, 1))))
 
@@ -1685,6 +1722,9 @@ class ML_ErrorFE(BaseML_ErrorFE):
                    If slx_lags>0, the specification becomes of the SLX type.
     slx_vars     : either "All" (default) or list of booleans to select x variables
                    to be lagged                   
+    time_effects : boolean
+                   If True, then include time dummies in the model specification (first omitted).
+                   Default: False                   
     epsilon      : float
                    tolerance criterion in mimimize_scalar function and
                    inverse_product
@@ -1765,7 +1805,9 @@ class ML_ErrorFE(BaseML_ErrorFE):
     mean_mu_i    : float
                    Mean of the fixed effects (mu_i) across all observations
     mu_i         : array
-                   nx1 array of the fixed effects (mu_i) for each observation
+                   nx1 array of the individual fixed effects
+    fixed_effects: array
+                   alias for mu_i (same object)
 
     Examples
     --------
@@ -1823,6 +1865,7 @@ class ML_ErrorFE(BaseML_ErrorFE):
         w,
         slx_lags=0,
         slx_vars="all",
+        time_effects=False,
         epsilon=0.0000001,
         vm=False,
         name_y=None,
@@ -1833,9 +1876,16 @@ class ML_ErrorFE(BaseML_ErrorFE):
     ):
 
         self.title = "ML SPATIAL ERROR PANEL MODEL - FIXED EFFECTS"
-        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.title, kx, kwx, self.t = prepare_panel(
-            y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, add_constant=False)
+        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.slx_vars, self.title, kx, kwx, self.t = prepare_panel(
+            y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, time_effects, add_constant=False)
         any(set_warn(self, i) for i in warn)
+  
+        if time_effects:
+            self.title += " WITH TIME EFFECTS"
+
+        N = w.n
+        dem_x = demean_panel(bigx, N, self.t, phi=0)
+        time_inv_check(dem_x, self.name_x)
 
         BaseML_ErrorFE.__init__(self, bigy, bigx, w, epsilon=epsilon)
 
@@ -1844,18 +1894,18 @@ class ML_ErrorFE(BaseML_ErrorFE):
         self.name_w = USER.set_name_w(name_w, w)
 
         self.output = pd.DataFrame(self.name_x, columns=['var_names'])
-        self.output['var_type'] = ['o'] + ['x'] * (kx-1) + ['wx'] * kwx + ["lambda"]
+        self.output['var_type'] = ['x'] * kx + ['wx'] * kwx + ["lambda"]
         self.output['regime'], self.output['equation'] = (0, 0)
-
         self.aic = DIAG.akaike(reg=self)
         self.schwarz = DIAG.schwarz(reg=self)
         self.other_top = _nonspat_top(self, ml=True)      
 
         u_undemean = bigy - np.dot(bigx, self.betas[:-1])
-        self.mu_i = u_undemean.reshape(self.t, w.n).mean(axis=0).reshape(-1, 1)        
+        self.mu_i = u_undemean.reshape(self.t, w.n).mean(axis=0).reshape(-1, 1) 
+        self.fixed_effects = self.mu_i
         self.mean_mu_i = self.mu_i.mean()
         self.other_top += "%-20s:%12.4f\n" % (
-            "Fixed-effects mean", self.mean_mu_i)
+            "Individual FE mean", self.mean_mu_i)
         output(reg=self, vm=vm, robust=False, other_end=False, latex=latex)
 
 class BaseML_ErrorRE(RegressionPropsY, RegressionPropsVM):
@@ -1917,7 +1967,7 @@ class BaseML_ErrorRE(RegressionPropsY, RegressionPropsVM):
     """
 
     def __init__(self, y, x, w, epsilon=0.0000001):
-        # set up main regression variables and spatial filters
+
         N = w.n
         NT = y.shape[0]
         self.t = NT // N
@@ -1926,7 +1976,7 @@ class BaseML_ErrorRE(RegressionPropsY, RegressionPropsVM):
 
         self.y = y
         self.x = x
-        # Big W matrix
+
         W = w.full()[0]
         Wsp = w.sparse
         
@@ -1998,7 +2048,6 @@ class BaseML_ErrorRE(RegressionPropsY, RegressionPropsVM):
         ys = yrand - self.lam * ylag
         xs = xrand - self.lam * xlag
 
-        # Final OLS
         xsxs = spdot(xs.T, xs)
         xsxsi = la.inv(xsxs)
         xsys = spdot(xs.T, ys)
@@ -2007,7 +2056,6 @@ class BaseML_ErrorRE(RegressionPropsY, RegressionPropsVM):
         self.u = self.y - spdot(self.x, b)
         self.predy = self.y - self.u
 
-        # residual variance
         self.e_filtered = ys - spdot(xs, b)
         self.sig2 = spdot(self.e_filtered.T, self.e_filtered) / NT
 
@@ -2016,7 +2064,6 @@ class BaseML_ErrorRE(RegressionPropsY, RegressionPropsVM):
 
         self.betas = np.vstack((b, self.lam, self.sig2_u))
 
-        # variance-covariance matrix lambda, sigma
         a = -self.lam * W
         spfill_diagonal(a, 1.0)
         aTai = la.inv(spdot(a.T, a))
@@ -2067,7 +2114,6 @@ class BaseML_ErrorRE(RegressionPropsY, RegressionPropsVM):
 
         vm1 = np.linalg.inv(v)
 
-        # create variance matrix for beta, lambda
         vv = np.hstack((varb, np.zeros((self.k, 2))))
         vv1 = np.hstack((np.zeros((2, self.k)), vm1[:2, :2]))
 
@@ -2135,7 +2181,10 @@ class ML_ErrorRE(BaseML_ErrorRE):
                    Number of spatial lags of X to include in the model specification.
                    If slx_lags>0, the specification becomes of the SLX type.
     slx_vars     : either "All" (default) or list of booleans to select x variables
-                   to be lagged                   
+                   to be lagged            
+    time_effects : boolean
+                   If True, then include time dummies in the model specification (first omitted).
+                   Default: False                          
     epsilon      : float
                    tolerance criterion in mimimize_scalar function and
                    inverse_product
@@ -2274,6 +2323,7 @@ class ML_ErrorRE(BaseML_ErrorRE):
         w,
         slx_lags=0,
         slx_vars="all",
+        time_effects=False,
         epsilon=0.0000001,
         vm=False,
         name_y=None,
@@ -2283,10 +2333,13 @@ class ML_ErrorRE(BaseML_ErrorRE):
         latex=False,
     ):
         self.title = "ML SPATIAL ERROR PANEL MODEL (SEM) - RANDOM EFFECTS"
-        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.title, kx, kwx, self.t = prepare_panel(
-            y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, add_constant=True)
+        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.slx_vars, self.title, kx, kwx, self.t = prepare_panel(
+            y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, time_effects, add_constant=True)
         any(set_warn(self, i) for i in warn)
-
+  
+        if time_effects:
+            self.title += " WITH TIME EFFECTS"
+            
         BaseML_ErrorRE.__init__(self, bigy, bigx, w, epsilon=epsilon)
         self.name_ds = USER.set_name_ds(name_ds)
         self.name_x.extend(["lambda", "sigma2_u"])
@@ -2360,22 +2413,21 @@ class BaseML_LagFE(RegressionPropsY, RegressionPropsVM):
     """
 
     def __init__(self, y, x, w, epsilon=0.0000001):
-        # set up main regression variables and spatial filters
+
         N = w.n
         NT = y.shape[0]
         self.t = NT // N
         self.k = x.shape[1]
         self.epsilon = epsilon
-        # Demeaned variables
+
         self.y = demean_panel(y, N, self.t)
         self.x = demean_panel(x, N, self.t)
-        # Big W matrix
+
         W = w.full()[0]
         Wsp = w.sparse
         Wsp_nt = sps.kron(sps.identity(self.t), Wsp, format="csr")
-        # lag dependent variable
+
         ylag = spdot(Wsp_nt, self.y)
-        # b0, b1, e0 and e1
         xtx = spdot(self.x.T, self.x)
         xtxi = la.inv(xtx)
         xty = spdot(self.x.T, self.y)
@@ -2385,7 +2437,6 @@ class BaseML_LagFE(RegressionPropsY, RegressionPropsVM):
         e0 = self.y - spdot(self.x, b0)
         e1 = ylag - spdot(self.x, b1)
 
-        # concentrated Log Likelihood
         I = sps.identity(N)
         res = minimize_scalar(
             self.lag_c_loglik_sp,
@@ -2397,12 +2448,10 @@ class BaseML_LagFE(RegressionPropsY, RegressionPropsVM):
         )
         self.rho = res.x[0][0]
 
-        # compute full log-likelihood, including constants
         ln2pi = np.log(2.0 * np.pi)
         llik = -res.fun - NT / 2.0 * ln2pi - NT / 2.0
         self.logll = llik[0][0]
 
-        # b, residuals and predicted values
         b = b0 - self.rho * b1
         self.betas = np.vstack((b, self.rho))  # rho added as last coefficient
         self.u = e0 - self.rho * e1
@@ -2415,11 +2464,9 @@ class BaseML_LagFE(RegressionPropsY, RegressionPropsVM):
         )
         self.e_pred = self.y - self.predy_e
 
-        # residual variance
         self._cache = {}
         self.sig2 = spdot(self.u.T, self.u) / NT
 
-        # information matrix
         a = -self.rho * W
         spfill_diagonal(a, 1.0)
         ai = spinv(a)
@@ -2440,7 +2487,7 @@ class BaseML_LagFE(RegressionPropsY, RegressionPropsVM):
         wTwpredy = spdot(waiTwai_nt, xb)
         wpyTwpy = spdot(xb.T, wTwpredy)
 
-        # order of variables is beta, rho, sigma2
+        # order of variables is beta, rho, phi, sigma2
         v1 = np.vstack((xtx / self.sig2, xTwpy.T / self.sig2, np.zeros((1, self.k))))
         v2 = np.vstack(
             (
@@ -2459,14 +2506,14 @@ class BaseML_LagFE(RegressionPropsY, RegressionPropsVM):
 
         v = np.hstack((v1, v2, v3))
 
-        self.vm1 = la.inv(v)  # vm1 includes variance for sigma2
-        self.vm = self.vm1[:-1, :-1]  # vm is for coefficients only
+        self.vm1 = la.inv(v)  
+        self.vm = self.vm1[:-1, :-1] 
         self.varb = la.inv(np.hstack((v1[:-1], v2[:-1])))
         self.k += 1  # add one to k to account for rho
         self.n = NT
 
     def lag_c_loglik_sp(self, rho, n, t, e0, e1, I, Wsp):
-        # concentrated log-lik for lag model, sparse algebra
+
         if isinstance(rho, np.ndarray):
             if rho.shape == (1, 1):
                 rho = rho[0][0]
@@ -2498,7 +2545,10 @@ class ML_LagFE(BaseML_LagFE):
                    Number of spatial lags of X to include in the model specification.
                    If slx_lags>0, the specification becomes of the SLX type.
     slx_vars     : either "All" (default) or list of booleans to select x variables
-                   to be lagged                   
+                   to be lagged    
+    time_effects : boolean
+                   If True, then include time dummies in the model specification (first omitted).
+                   Default: False                                  
     epsilon      : float
                    tolerance criterion in mimimize_scalar function and
                    inverse_product
@@ -2589,7 +2639,9 @@ class ML_LagFE(BaseML_LagFE):
     mean_mu_i    : float
                    Mean of the fixed effects (mu_i) across observations
     mu_i         : array
-                   nx1 array of the fixed effects (mu_i) for each observation
+                   nx1 array of the individual fixed effects
+    fixed_effects: array
+                   alias for mu_i (same object)
                    
     Examples
     --------
@@ -2647,6 +2699,7 @@ class ML_LagFE(BaseML_LagFE):
         w,
         slx_lags=0,
         slx_vars="all",
+        time_effects=False,
         epsilon=0.0000001,
         spat_impacts="simple",        
         vm=False,
@@ -2658,9 +2711,16 @@ class ML_LagFE(BaseML_LagFE):
     ):
         self.title = "ML SPATIAL LAG PANEL - FIXED EFFECTS"
 
-        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.title, kx, kwx, self.t = prepare_panel(
-            y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, add_constant=False)
+        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.slx_vars, self.title, kx, kwx, self.t = prepare_panel(
+            y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, time_effects, add_constant=False)
         any(set_warn(self, i) for i in warn)
+  
+        if time_effects:
+            self.title += " WITH TIME EFFECTS"  
+
+        N = w.n
+        dem_x = demean_panel(bigx, N, self.t, phi=0)
+        time_inv_check(dem_x, self.name_x)
 
         BaseML_LagFE.__init__(self, bigy, bigx, w, epsilon=epsilon)
 
@@ -2677,13 +2737,18 @@ class ML_LagFE(BaseML_LagFE):
         self.other_top, self.other_mid, other_end = ("", "", "")
         self.other_top += _nonspat_top(self, ml=True)
 
-        u_undemean = bigy - np.dot(bigx, self.betas[:-1])
-        self.mu_i = u_undemean.reshape(self.t, w.n).mean(axis=0).reshape(-1, 1)
-        self.mean_mu_i = self.mu_i.mean()
+        y_mean = bigy.reshape(self.t, N).mean(axis=0).reshape(-1, 1)
+        x_mean = bigx.reshape(self.t, N, bigx.shape[1]).mean(axis=0)
+        W_y_mean = w.sparse @ y_mean
+
+        self.mu_i = y_mean - (x_mean @ self.betas[:-1]) - self.rho * W_y_mean
+        self.mean_mu_i = float(self.mu_i.mean())
+        self.fixed_effects = self.mu_i
+
         self.other_top += "%-20s:%12.4f\n" % (
-            "Fixed-effects mean", self.mean_mu_i)        
+            "Individual FE mean", self.mean_mu_i)        
         if spat_impacts:
-            self.sp_multipliers, impacts_str = _summary_impacts(self, w, spat_impacts, slx_lags,slx_vars)
+            self.sp_multipliers, impacts_str = _summary_impacts(self, w, spat_impacts, self.slx_lags, self.slx_vars)
             other_end += impacts_str
         output(reg=self, vm=vm, other_end=other_end, latex=latex)
 
@@ -2751,17 +2816,17 @@ class BaseML_LagRE(RegressionPropsY, RegressionPropsVM):
     """
 
     def __init__(self, bigy, bigx, w, epsilon=0.0000001):
-        # set up main regression variables and spatial filters
+
         N = w.n
         NT = bigy.shape[0]
         self.t = NT // N
         self.k = bigx.shape[1]
         self.epsilon = epsilon
-        # Big W matrix
+
         W = w.full()[0]
         Wsp = w.sparse
         Wsp_nt = sps.kron(sps.identity(self.t), Wsp, format="csr")
-        # Set up parameters
+
         converge = 1
         criteria = 0.0000001
         i = 0
@@ -2774,7 +2839,6 @@ class BaseML_LagRE(RegressionPropsY, RegressionPropsVM):
         xty = spdot(bigx.T, bigy)
         b = spdot(xtxi, xty)
 
-        # Iterative procedure
         while converge > criteria and i < itermax:
             phiold = self.phi
             res_phi = minimize_scalar(
@@ -2786,12 +2850,11 @@ class BaseML_LagRE(RegressionPropsY, RegressionPropsVM):
                 options={"xatol": epsilon},
             )
             self.phi = res_phi.x[0][0]
-            # Demeaned variables
+
             self.y = demean_panel(bigy, N, self.t, phi=self.phi)
             self.x = demean_panel(bigx, N, self.t, phi=self.phi)
-            # lag dependent variable
+
             ylag = spdot(Wsp_nt, self.y)
-            # b0, b1, e0 and e1
             xtx = spdot(self.x.T, self.x)
             xtxi = la.inv(xtx)
             xty = spdot(self.x.T, self.y)
@@ -2813,7 +2876,6 @@ class BaseML_LagRE(RegressionPropsY, RegressionPropsVM):
             i += 1
             converge = np.abs(phiold - self.phi)
 
-        # compute full log-likelihood, including constants
         ln2pi = np.log(2.0 * np.pi) 
         phi_jacob = (N / 2.0) * np.log(self.phi ** 2)
         llik = (-res_rho.fun + phi_jacob 
@@ -2821,7 +2883,6 @@ class BaseML_LagRE(RegressionPropsY, RegressionPropsVM):
             - NT / 2.0)
         self.logll = llik[0][0] 
 
-        # b, residuals and predicted values
         self.betas = np.vstack((b, self.rho, self.phi))
         self.u = e0 - self.rho * e1
         self.predy = self.y - self.u
@@ -2832,11 +2893,9 @@ class BaseML_LagRE(RegressionPropsY, RegressionPropsVM):
         )
         self.e_pred = self.y - self.predy_e
 
-        # residual variance
         self._cache = {}
         self.sig2 = spdot(self.u.T, self.u) / NT
 
-        # information matrix
         a = -self.rho * W
         spfill_diagonal(a, 1.0)
         ai = spinv(a)
@@ -2857,7 +2916,6 @@ class BaseML_LagRE(RegressionPropsY, RegressionPropsVM):
         wTwpredy = spdot(waiTwai_nt, xb)
         wpyTwpy = spdot(xb.T, wTwpredy)
 
-        # order of variables is beta, rho, sigma2
         v1 = np.vstack((xtx / self.sig2, xTwpy.T / self.sig2, np.zeros((2, self.k))))
         v2 = np.vstack(
             (
@@ -2886,12 +2944,40 @@ class BaseML_LagRE(RegressionPropsY, RegressionPropsVM):
 
         v = np.hstack((v1, v2, v3, v4))
 
-        self.vm1 = la.inv(v)  # vm1 includes variance for sigma2
-        self.vm = self.vm1[:-1, :-1]  # vm is for coefficients and phi
+        self.vm1 = la.inv(v)  
+        self.vm = self.vm1[:-1, :-1]  
         self.varb = la.inv(np.hstack((v1[:-2], v2[:-2])))
-        self.k += 1 # add one to k to account for rho
+        self.k += 2 # add two to k to account for rho and phi
         self.n = NT
 
+
+    def lag_c_loglik_sp(self, rho, n, t, e0, e1, I, Wsp):
+
+        if isinstance(rho, np.ndarray):
+            if rho.shape == (1, 1):
+                rho = rho[0][0]
+        er = e0 - rho * e1
+        sig2 = spdot(er.T, er) / (n * t)
+        nlsig2 = (n * t / 2.0) * np.log(sig2)
+        a = I - rho * Wsp
+        LU = sps.linalg.splu(a.tocsc())
+        jacob = t * np.sum(np.log(np.abs(LU.U.diagonal())))
+        clike = nlsig2 - jacob
+        return clike
+
+
+    def phi_c_loglik(self, phi, rho, beta, bigy, bigx, n, t, W_nt):
+
+        y = demean_panel(bigy, n, t, phi=phi)
+        x = demean_panel(bigx, n, t, phi=phi)
+
+        ylag = spdot(W_nt, y)
+        er = y - rho * ylag - spdot(x, beta)
+        sig2 = spdot(er.T, er)
+        nlsig2 = (n * t / 2.0) * np.log(sig2)
+        nphi2 = (n / 2.0) * np.log(phi ** 2)
+        clike = nlsig2 - nphi2
+        return clike
 
 class ML_LagRE(BaseML_LagRE):
 
@@ -2908,6 +2994,14 @@ class ML_LagRE(BaseML_LagRE):
                    variables, excluding the constant
     w            : pysal W object
                    Spatial weights object
+    slx_lags     : integer
+                   Number of spatial lags of X to include in the model specification.
+                   If slx_lags>0, the specification becomes of the SLX type.
+    slx_vars     : either "All" (default) or list of booleans to select x variables
+                   to be lagged    
+    time_effects : boolean
+                   If True, then include time dummies in the model specification (first omitted).
+                   Default: False                   
     spat_impacts : string or list
                    Include average direct impact (ADI), average indirect impact (AII),
                     and average total impact (ATI) in summary results.
@@ -3048,6 +3142,7 @@ class ML_LagRE(BaseML_LagRE):
         w,
         slx_lags=0,
         slx_vars="all",
+        time_effects=False,
         epsilon=0.0000001,
         spat_impacts="simple",        
         vm=False,
@@ -3060,16 +3155,19 @@ class ML_LagRE(BaseML_LagRE):
 
         self.title = "ML SPATIAL LAG PANEL - RANDOM EFFECTS"
 
-        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.title, kx, kwx, self.t = prepare_panel(
-            y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, add_constant=True)
+        bigy, bigx, self.name_y, self.name_x, w, warn, self.slx_lags, self.slx_vars, self.title, kx, kwx, self.t = prepare_panel(
+            y, x, w, name_y, name_x, slx_lags, slx_vars, self.title, time_effects, add_constant=True)
         any(set_warn(self, i) for i in warn)
+  
+        if time_effects:
+            self.title += " WITH TIME EFFECTS"
 
         BaseML_LagRE.__init__(self, bigy, bigx, w, epsilon=epsilon)
 
         self.name_ds = USER.set_name_ds(name_ds)
         name_ylag = USER.set_name_yend_sp(self.name_y)
-        self.name_x.append(name_ylag)  # rho changed to last position
-        self.name_x.append("phi")  # error variance parameter
+        self.name_x.append(name_ylag)
+        self.name_x.append("phi")
         self.name_w = USER.set_name_w(name_w, w)
         self.aic = DIAG.akaike(reg=self)
         self.schwarz = DIAG.schwarz(reg=self)
@@ -3079,37 +3177,6 @@ class ML_LagRE(BaseML_LagRE):
         self.other_top, self.other_mid, other_end = ("", "", "")
         self.other_top += _nonspat_top(self, ml=True)
         if spat_impacts:
-            self.sp_multipliers, impacts_str = _summary_impacts(self, w, spat_impacts, slx_lags,slx_vars)
+            self.sp_multipliers, impacts_str = _summary_impacts(self, w, spat_impacts, self.slx_lags, self.slx_vars)
             other_end += impacts_str
         output(reg=self, vm=vm, other_end=other_end, latex=latex)
-
-
-    def lag_c_loglik_sp(self, rho, n, t, e0, e1, I, Wsp):
-        # concentrated log-lik for lag model, sparse algebra
-        if isinstance(rho, np.ndarray):
-            if rho.shape == (1, 1):
-                rho = rho[0][0]
-        er = e0 - rho * e1
-        sig2 = spdot(er.T, er) / (n * t)
-        nlsig2 = (n * t / 2.0) * np.log(sig2)
-        a = I - rho * Wsp
-        LU = sps.linalg.splu(a.tocsc())
-        jacob = t * np.sum(np.log(np.abs(LU.U.diagonal())))
-        clike = nlsig2 - jacob
-        return clike
-
-
-    def phi_c_loglik(self, phi, rho, beta, bigy, bigx, n, t, W_nt):
-        # Demeaned variables
-        y = demean_panel(bigy, n, t, phi=phi)
-        x = demean_panel(bigx, n, t, phi=phi)
-        # Lag dependent variable
-        ylag = spdot(W_nt, y)
-        er = y - rho * ylag - spdot(x, beta)
-        sig2 = spdot(er.T, er)
-        nlsig2 = (n * t / 2.0) * np.log(sig2)
-        nphi2 = (n / 2.0) * np.log(phi ** 2)
-        clike = nlsig2 - nphi2
-        return clike
-
-
