@@ -12,7 +12,7 @@ from scipy import sparse as sp
 from .sputils import spdot
 from . import user_output as USER
 
-def prepare_panel(y, x, w, name_y, name_x, slx_lags, slx_vars, title, add_constant=True):
+def prepare_panel(y, x, w, name_y, name_x, slx_lags, slx_vars, title, time_effects, add_constant=True):
     """
     Prepare the data for panel regression.
     Parameters as in the panel regression classes, with the addition of:
@@ -39,6 +39,15 @@ def prepare_panel(y, x, w, name_y, name_x, slx_lags, slx_vars, title, add_consta
         bigx,name_x = USER.flex_wx(w,x=bigx,name_x=name_x,constant=add_constant,
                                         slx_lags=slx_lags,slx_vars=slx_vars, panel=True)            
     kwx = bigx.shape[1] - kx
+
+    if time_effects and T > 1:
+        n = w.n
+        time_dummies = np.repeat(np.eye(T), n, axis=0)[:, 1:]        
+        bigx = np.hstack((bigx, time_dummies))            
+        time_names = [f"time_{t}" for t in range(2, T + 1)]
+        name_x.extend(time_names)
+        kx += T - 1
+
     return bigy, bigx, name_y, name_x, w, warn, slx_lags, title, kx, kwx, T
 
 def check_panel(y, x, w, name_y, name_x):
@@ -157,3 +166,32 @@ def demean_panel(arr, n, t, phi=0):
     arr_dm = spdot(Q, arr)
 
     return arr_dm
+
+import numpy as np
+
+def time_inv_check(dem_x, name_x):
+    """
+    Check for time-invariant variables in a demeaned matrix.
+    
+    Parameters
+    ----------
+    dem_x  : array
+             Demeaned independent variables array (n*t x k)
+    name_x : list of strings
+             Names of independent variables
+             
+    Raises
+    ------
+    ValueError
+        If time-invariant variables are detected (variance is zero).
+    """
+    var_check = np.var(dem_x, axis=0)
+    invalid_cols = np.where(var_check <= 1e-12)[0]
+    
+    if invalid_cols.size > 0:
+        invalid_names = [name_x[i] for i in invalid_cols]
+        raise ValueError(
+            f"Time-invariant variables detected: {', '.join(invalid_names)}. "
+            "These cannot be estimated using the Within transformation. "
+            "Please remove them from the input variables (x)."
+        )
