@@ -395,6 +395,7 @@ class TestPanel(unittest.TestCase):
             w=self.w,
             time_effects=True,
             slx_lags=1,
+            slx_vars=[True,True],
             nonspat_diag=False,
             spat_diag=False,
         )
